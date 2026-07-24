@@ -267,9 +267,15 @@ export class IndexManager {
 				ignoreInitial: true,
 				ignored: (path) => isIgnoredWatchPath(this.root, path),
 				persistent: false,
+				// Node 24's Windows fs-event backend can abort the process while paths are
+				// changing. Polling avoids that native crash and remains fully portable.
+				usePolling: process.platform === "win32",
 			});
 			this.watcher.on("all", (_event, path) => {
-				if (!existsSync(this.root)) return this.stopWatching();
+				if (!existsSync(this.root)) {
+					void this.stopWatching();
+					return;
+				}
 				const filename = relative(this.root, path).replaceAll("\\", "/");
 				if (!isWatchableChange(filename)) return;
 				this.pendingChanges.add(filename);
@@ -284,7 +290,7 @@ export class IndexManager {
 			this.watcher.on("error", (error) => {
 				this.watcherState = "error";
 				this.watcherError = error instanceof Error ? error.message : String(error);
-				this.stopWatching(true);
+				void this.stopWatching(true);
 			});
 		} catch (error) {
 			this.watcherState = "unavailable";
@@ -292,28 +298,26 @@ export class IndexManager {
 		}
 	}
 
-	stopWatching(preserveState = false): void {
+	async stopWatching(preserveState = false): Promise<void> {
 		if (this.watchTimer) {
 			clearTimeout(this.watchTimer);
 			this.watchTimer = undefined;
 		}
-		if (this.watcher) {
-			void this.watcher.close().catch(() => undefined);
-			this.watcher = undefined;
-		}
+		const watcher = this.watcher;
+		this.watcher = undefined;
 		if (!preserveState) {
 			this.watcherState = "inactive";
 			this.watcherError = undefined;
 		}
+		await watcher?.close().catch(() => undefined);
 	}
 
 	/** Terminate background workers and close the store; used on session shutdown. */
-	shutdown(): void {
-		this.stopWatching();
-		for (const worker of [...this.workers]) {
-			this.workers.delete(worker);
-			void worker.terminate().catch(() => undefined);
-		}
+	async shutdown(): Promise<void> {
+		await this.stopWatching();
+		const workers = [...this.workers];
+		this.workers.clear();
+		await Promise.all(workers.map((worker) => worker.terminate().catch(() => undefined)));
 		this.store?.close();
 		this.store = undefined;
 	}

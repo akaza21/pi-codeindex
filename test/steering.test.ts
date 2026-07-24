@@ -53,13 +53,13 @@ describe("proactive navigation guidance (before_agent_start)", () => {
 
 	// Guards the gate against being vacuously true: repos() always resolves to a marker, so
 	// the predicate must look at actual indexed symbols, which an empty dir has none of.
-	it("hasIndexedSymbols() is false for a directory with nothing indexed", () => {
+	it("hasIndexedSymbols() is false for a directory with nothing indexed", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "codeindex-ws-"));
 		const ws = new WorkspaceManager(dir);
 		try {
 			expect(ws.hasIndexedSymbols()).toBe(false);
 		} finally {
-			ws.shutdown();
+			await ws.shutdown();
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
@@ -72,7 +72,7 @@ describe("proactive navigation guidance (before_agent_start)", () => {
 			for (const repo of ws.repos()) await ws.managerFor(repo.path).sync();
 			expect(ws.hasIndexedSymbols()).toBe(true);
 		} finally {
-			ws.shutdown();
+			await ws.shutdown();
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});

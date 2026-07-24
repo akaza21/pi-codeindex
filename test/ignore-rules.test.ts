@@ -159,7 +159,7 @@ describe("ignore-aware indexing", () => {
 			await (manager as any).syncPending();
 			expect(calls).toEqual([{}, {}]);
 		} finally {
-			manager.shutdown();
+			await manager.shutdown();
 		}
 	});
 });
