@@ -51,7 +51,6 @@ export class IndexManager {
 	private readonly workers = new Set<Worker>();
 	private watcher?: FSWatcher;
 	private watchTimer?: ReturnType<typeof setTimeout>;
-	private watchCatchUpTimer?: ReturnType<typeof setTimeout>;
 	private lastSyncError?: string;
 	private watcherState: "inactive" | "active" | "unavailable" | "error" = "inactive";
 	private watcherError?: string;
@@ -275,18 +274,6 @@ export class IndexManager {
 				this.watcherError = error.message;
 				this.stopWatching(true);
 			});
-			// Recursive watcher backends may become observable asynchronously.
-			// A one-time full sync closes that attachment gap.
-			if (this.synced) {
-				this.watchCatchUpTimer = setTimeout(() => {
-					this.watchCatchUpTimer = undefined;
-					const syncIfWatching = async (): Promise<void> => {
-						if (this.watcher) await this.sync();
-					};
-					const catchUp = this.inflight ? this.inflight.then(syncIfWatching, syncIfWatching) : syncIfWatching();
-					void catchUp.catch(() => undefined);
-				}, WATCH_DEBOUNCE_MS);
-			}
 		} catch (error) {
 			this.watcherState = "unavailable";
 			this.watcherError = error instanceof Error ? error.message : String(error);
@@ -297,10 +284,6 @@ export class IndexManager {
 		if (this.watchTimer) {
 			clearTimeout(this.watchTimer);
 			this.watchTimer = undefined;
-		}
-		if (this.watchCatchUpTimer) {
-			clearTimeout(this.watchCatchUpTimer);
-			this.watchCatchUpTimer = undefined;
 		}
 		if (this.watcher) {
 			try {

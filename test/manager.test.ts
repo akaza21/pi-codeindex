@@ -148,6 +148,8 @@ describe("watcher integration", () => {
 				expect(m.diagnostics().watcher).toBe("unavailable");
 				return;
 			}
+			// macOS can expose a recursive watcher handle before its backend is ready.
+			await delay(500);
 			writeFileSync(
 				join(dir, "a.ts"),
 				"export function original() { return 1; }\nexport function addedByWatcher() { return 2; }\n",
