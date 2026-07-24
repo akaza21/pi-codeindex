@@ -1,0 +1,17 @@
+node_modules/
+*.db
+*.db-shm
+*.db-wal
+.codeindex/
+dist/
+coverage/
+*.log
+*.scip
+*.tgz
+.env
+.env.*
+!.env.example
+.DS_Store
+*:Zone.Identifier
+.pi/
+.pi-subagents/

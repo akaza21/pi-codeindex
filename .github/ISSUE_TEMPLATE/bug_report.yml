@@ -1,0 +1,43 @@
+name: Bug report
+description: Report incorrect indexing, tool behavior, CLI behavior, or packaging.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please remove private code and credentials from reproductions.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: pi-codeindex, pi, Node.js, and operating-system versions.
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - pi extension
+        - standalone CLI
+        - both
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include the language, tiny source fixture, command/tool call, and exact output.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Include confidence/provenance labels and whether typed or SCIP mode was enabled.

@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose a capability or compatibility improvement.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or agent workflow is difficult today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the proposed behavior and expected output.
+    validations:
+      required: true
+  - type: textarea
+    id: tradeoffs
+    attributes:
+      label: Precision and compatibility tradeoffs
+      description: Note languages, false-positive risks, performance costs, or API changes.
