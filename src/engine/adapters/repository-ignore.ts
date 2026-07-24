@@ -9,6 +9,7 @@
 import { lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import ignore, { type Ignore } from "ignore";
+import { canonicalRepositoryRoot, existingPathWithinRoot } from "./repo-path.ts";
 
 interface RuleSet {
 	baseParts: readonly string[];
@@ -21,7 +22,7 @@ export class RepositoryIgnore {
 	private readonly nestedRepositoryByDirectory = new Map<string, boolean>();
 
 	constructor(root: string) {
-		this.root = root;
+		this.root = canonicalRepositoryRoot(root);
 	}
 
 	/**
@@ -62,9 +63,10 @@ export class RepositoryIgnore {
 
 		let source: string;
 		try {
-			const path = join(this.root, ...directoryParts, ".gitignore");
+			const path = existingPathWithinRoot(this.root, join(this.root, ...directoryParts, ".gitignore"), true);
+			if (!path) throw new Error("ignore file is outside the repository");
 			const stat = lstatSync(path);
-			if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("not a regular ignore file");
+			if (!stat.isFile()) throw new Error("not a regular ignore file");
 			source = readFileSync(path, "utf8");
 		} catch {
 			this.rulesByDirectory.set(key, null);
@@ -85,7 +87,9 @@ export class RepositoryIgnore {
 		const cached = this.nestedRepositoryByDirectory.get(key);
 		if (cached !== undefined) return cached;
 		try {
-			lstatSync(join(this.root, ...directoryParts, ".git"));
+			const path = existingPathWithinRoot(this.root, join(this.root, ...directoryParts, ".git"), true);
+			if (!path) throw new Error("nested repository marker is outside the repository");
+			lstatSync(path);
 			this.nestedRepositoryByDirectory.set(key, true);
 			return true;
 		} catch {

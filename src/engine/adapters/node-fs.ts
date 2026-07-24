@@ -3,18 +3,26 @@
  * applies repository ignore rules and hard traversal boundaries before yielding files.
  */
 
-import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { isPrunedSourcePath } from "../indexer/source-filter.ts";
 import type { FileStat, FileSystem } from "../ports.ts";
+import { canonicalRepositoryRoot, existingPathWithinRoot } from "./repo-path.ts";
 import { RepositoryIgnore } from "./repository-ignore.ts";
 
 export class NodeFileSystem implements FileSystem {
-	private readonly ignoreRules = new Map<string, RepositoryIgnore>();
+	private readonly root: string;
+	private ignoreRules: RepositoryIgnore;
+
+	constructor(root: string) {
+		this.root = canonicalRepositoryRoot(root);
+		this.ignoreRules = new RepositoryIgnore(this.root);
+	}
 
 	readFile(absPath: string): string | undefined {
 		try {
-			return readFileSync(absPath, "utf8");
+			const path = existingPathWithinRoot(this.root, absPath, true);
+			return path ? readFileSync(path, "utf8") : undefined;
 		} catch {
 			return undefined;
 		}
@@ -22,8 +30,9 @@ export class NodeFileSystem implements FileSystem {
 
 	stat(absPath: string): FileStat | undefined {
 		try {
-			const s = lstatSync(absPath);
-			if (s.isSymbolicLink()) return undefined;
+			const path = existingPathWithinRoot(this.root, absPath, true);
+			if (!path) return undefined;
+			const s = lstatSync(path);
 			return { mtimeMs: s.mtimeMs, size: s.size };
 		} catch {
 			return undefined;
@@ -31,27 +40,27 @@ export class NodeFileSystem implements FileSystem {
 	}
 
 	exists(absPath: string): boolean {
-		return existsSync(absPath);
+		return existingPathWithinRoot(this.root, absPath, true) !== undefined;
 	}
 
 	refreshIgnoreRules(root: string): void {
-		this.ignoreRules.set(root, new RepositoryIgnore(root));
+		const canonical = existingPathWithinRoot(this.root, root);
+		if (canonical !== this.root) return;
+		this.ignoreRules = new RepositoryIgnore(this.root);
 	}
 
 	isIgnored(root: string, relativePath: string, directory = false): boolean {
-		let rules = this.ignoreRules.get(root);
-		if (!rules) {
-			rules = new RepositoryIgnore(root);
-			this.ignoreRules.set(root, rules);
-		}
-		return rules.ignores(relativePath, directory);
+		if (existingPathWithinRoot(this.root, root) !== this.root) return true;
+		return this.ignoreRules.ignores(relativePath, directory);
 	}
 
 	*walk(root: string): Iterable<string> {
+		const start = resolve(root);
+		if (existingPathWithinRoot(this.root, start) !== this.root) return;
 		// A walk is a new filesystem snapshot. Re-read ignore files so repeated
 		// syncs through one Indexer observe `.gitignore` edits.
-		this.refreshIgnoreRules(root);
-		const stack = [root];
+		this.refreshIgnoreRules(start);
+		const stack = [start];
 		while (stack.length > 0) {
 			const dir = stack.pop() as string;
 			let entries: string[];
@@ -63,7 +72,7 @@ export class NodeFileSystem implements FileSystem {
 			for (const entry of entries) {
 				if (isPrunedSourcePath(entry)) continue;
 				const full = join(dir, entry);
-				const relativePath = relative(root, full).replaceAll("\\", "/");
+				const relativePath = relative(start, full).replaceAll("\\", "/");
 				let stat: { isDirectory(): boolean; isFile(): boolean; isSymbolicLink(): boolean };
 				try {
 					stat = lstatSync(full);
@@ -74,8 +83,8 @@ export class NodeFileSystem implements FileSystem {
 				// avoid cycles created by links back into an ancestor.
 				if (stat.isSymbolicLink()) continue;
 				if (stat.isDirectory()) {
-					if (!this.isIgnored(root, relativePath, true)) stack.push(full);
-				} else if (stat.isFile() && !this.isIgnored(root, relativePath)) {
+					if (!this.isIgnored(this.root, relativePath, true)) stack.push(full);
+				} else if (stat.isFile() && !this.isIgnored(this.root, relativePath)) {
 					yield full;
 				}
 			}
