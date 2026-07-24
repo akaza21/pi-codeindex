@@ -58,7 +58,7 @@
     "web-tree-sitter": "^0.26.9"
   },
   "optionalDependencies": {
-    "protobufjs": "^7.6.5",
+    "protobufjs": "^8.7.1",
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
