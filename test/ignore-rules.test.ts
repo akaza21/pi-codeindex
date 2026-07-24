@@ -24,7 +24,7 @@ function write(root: string, path: string, source: string): void {
 }
 
 function walked(root: string): string[] {
-	return [...new NodeFileSystem().walk(root)].map((path) => relative(root, path).replaceAll("\\", "/"));
+	return [...new NodeFileSystem(root).walk(root)].map((path) => relative(root, path).replaceAll("\\", "/"));
 }
 
 describe("repository ignore rules", () => {
@@ -82,7 +82,7 @@ describe("repository ignore rules", () => {
 			symlinkSync(join(outside, "rules"), join(root, ".gitignore"), "file");
 			expect(walked(root)).toEqual(["visible.ts"]);
 		}
-		const fs = new NodeFileSystem();
+		const fs = new NodeFileSystem(root);
 		expect(fs.isIgnored(root, "../outside.ts")).toBe(true);
 		expect(fs.isIgnored(root, "/absolute.ts")).toBe(true);
 	});

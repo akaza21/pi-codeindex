@@ -6,7 +6,9 @@
  */
 
 import { rmSync } from "node:fs";
+import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { isSafeRepoRelativePath } from "../adapters/repo-path.ts";
 import { EMPTY_LAYOUT, type ProjectLayout } from "../imports/project-layout.ts";
 import {
 	INHERITANCE_ROLES,
@@ -69,7 +71,7 @@ export class SqliteStore implements Store {
 	private readonly root: string;
 
 	constructor(root: string, dbPath: string) {
-		this.root = root;
+		this.root = resolve(root);
 		this.db = new DatabaseSync(dbPath);
 		try {
 			// busy_timeout first: the WAL switch itself takes a lock and must wait out a
@@ -129,9 +131,26 @@ export class SqliteStore implements Store {
 	private migrate(): void {
 		this.db.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
 		const current = this.getMeta("index_format_version");
-		if (current !== INDEX_FORMAT_VERSION) this.db.exec(DROP_SQL);
+		const storedRoot = this.getMeta("repository_root");
+		if (current !== INDEX_FORMAT_VERSION || storedRoot !== this.root) {
+			this.resetSchema();
+			return;
+		}
 		this.db.exec(SCHEMA_SQL);
-		if (current !== INDEX_FORMAT_VERSION) this.setMeta("index_format_version", INDEX_FORMAT_VERSION);
+		const unsafe = (
+			this.db.prepare("SELECT path FROM files").all() as Array<{
+				path?: unknown;
+			}>
+		).some((row) => !isSafeRepoRelativePath(String(row.path ?? "")));
+		if (unsafe) this.resetSchema();
+	}
+
+	private resetSchema(): void {
+		this.db.exec(DROP_SQL);
+		this.db.exec("DELETE FROM meta");
+		this.db.exec(SCHEMA_SQL);
+		this.setMeta("index_format_version", INDEX_FORMAT_VERSION);
+		this.setMeta("repository_root", this.root);
 	}
 
 	getFileMeta(path: string): FileMeta | undefined {
@@ -193,6 +212,7 @@ export class SqliteStore implements Store {
 	}
 
 	upsertFileFacts(path: string, lang: string, mtimeMs: number, size: number, hash: string, facts: FileFacts): void {
+		if (!isSafeRepoRelativePath(path)) throw new Error(`refusing to store a path outside the repository: ${path}`);
 		const { fileId, existed } = this.upsertFile(path, lang, mtimeMs, size, hash);
 		// A new file cannot have child rows. Skipping the deletes matters for FTS5: deleting by the
 		// UNINDEXED file_id column scans the growing virtual table and made fresh builds quadratic.

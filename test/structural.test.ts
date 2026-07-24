@@ -9,12 +9,13 @@ const FUNCTIONS = "(function_declaration name: (identifier) @name)";
 describe("structural search", () => {
 	let dir: string;
 	let store: Store;
-	const fs = new NodeFileSystem();
+	let fs: NodeFileSystem;
 	const parser = new TreeSitterParser();
 	const deps = () => ({ store, fs, parser, root: dir });
 
 	beforeAll(async () => {
 		dir = mkdtempSync(join(tmpdir(), "codeindex-struct-"));
+		fs = new NodeFileSystem(dir);
 		writeFileSync(
 			join(dir, "a.ts"),
 			"export function alpha() { try { run(); } catch (e) {} }\nexport function beta() { return 2; }\n",
