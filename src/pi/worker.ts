@@ -49,6 +49,7 @@ port.once("message", async (message: IndexWorkerRequest) => {
 		if ("result" in response) response = { error: error instanceof Error ? error.message : String(error) };
 	}
 	port.postMessage(response);
+	port.close();
 });
 
 port.postMessage({ ready: true } satisfies IndexWorkerResponse);

@@ -218,11 +218,11 @@ export class IndexManager {
 			this.workers.add(worker);
 			let ready = false;
 			let settled = false;
+			let response: IndexWorkerResponse | undefined;
 			const settle = (fn: () => void): void => {
 				if (settled) return;
 				settled = true;
 				this.workers.delete(worker);
-				void worker.terminate().catch(() => undefined);
 				fn();
 			};
 			worker.on("message", (message: IndexWorkerResponse) => {
@@ -235,21 +235,24 @@ export class IndexManager {
 					} satisfies IndexWorkerRequest);
 					return;
 				}
-				if (message.result) settle(() => resolve(message.result as SyncResult));
-				else settle(() => reject(new Error(message.error ?? "index worker returned no result")));
+				response = message;
 			});
 			worker.once("error", (error) =>
 				settle(() => reject(ready ? error : new WorkerUnavailableError(String(error)))),
 			);
-			worker.once("exit", (code) =>
-				settle(() =>
-					reject(
-						ready
-							? new Error(`index worker exited with code ${code}`)
-							: new WorkerUnavailableError(`index worker exited with code ${code} before ready`),
-					),
-				),
-			);
+			worker.once("exit", (code) => {
+				settle(() => {
+					if (!ready) {
+						reject(new WorkerUnavailableError(`index worker exited with code ${code} before ready`));
+					} else if (code !== 0) {
+						reject(new Error(`index worker exited with code ${code}`));
+					} else if (response?.result) {
+						resolve(response.result);
+					} else {
+						reject(new Error(response?.error ?? "index worker returned no result"));
+					}
+				});
+			});
 		});
 	}
 
