@@ -75,7 +75,7 @@ describe("freshness — stale hint", () => {
 			const res = await tools.get("codeindex_def").execute("d", { name: "stalecheck" }, undefined, undefined, ctx);
 			expect(res.content[0].text).toContain("if results look stale");
 		} finally {
-			handlers.get("session_shutdown")?.({}, ctx);
+			await handlers.get("session_shutdown")?.({}, ctx);
 		}
 	});
 });
@@ -118,7 +118,7 @@ describe("manual sync contract", () => {
 		finishFirst?.({ indexedFiles: 1, removedFiles: 0, totalFiles: 1, symbols: 1, truncated: false, durationMs: 0 });
 		await Promise.all([incremental, manual]);
 		expect(calls).toEqual([{ only: ["a.ts"] }, undefined]);
-		manager.shutdown();
+		await manager.shutdown();
 	});
 
 	it("retains a sync failure for status diagnostics", async () => {
@@ -129,13 +129,13 @@ describe("manual sync contract", () => {
 			await expect(manager.sync()).rejects.toThrow("synthetic sync failure");
 			expect(manager.diagnostics().lastSyncError).toBe("synthetic sync failure");
 		} finally {
-			manager.shutdown();
+			await manager.shutdown();
 		}
 	});
 });
 
 describe("watcher integration", () => {
-	// fs.watch({recursive}) is platform-gated; unsupported platforms must report degradation.
+	// Unsupported watcher backends must report degradation instead of breaking indexing.
 	it("folds a filesystem edit into the index (edit -> sync -> query)", async () => {
 		dir = mkdtempSync(join(tmpdir(), "codeindex-watch-"));
 		writeFileSync(join(dir, "a.ts"), "export function original() { return 1; }\n");
@@ -148,6 +148,8 @@ describe("watcher integration", () => {
 				expect(m.diagnostics().watcher).toBe("unavailable");
 				return;
 			}
+			// macOS can expose a recursive watcher handle before its backend is ready.
+			await delay(500);
 			writeFileSync(
 				join(dir, "a.ts"),
 				"export function original() { return 1; }\nexport function addedByWatcher() { return 2; }\n",
@@ -164,7 +166,7 @@ describe("watcher integration", () => {
 			expect(seen).toBe(true);
 			expect(m.getStore().definitions("addedByWatcher", 5)).toHaveLength(1);
 		} finally {
-			m.shutdown();
+			await m.shutdown();
 		}
 	}, 15000);
 });

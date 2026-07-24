@@ -91,7 +91,7 @@ describe("codeindex_explore (tool)", () => {
 			expect(text).toContain("callers"); // call graph
 			expect(text).toContain("impact:"); // impact summary
 		} finally {
-			handlers.get("session_shutdown")?.({}, ctx);
+			await handlers.get("session_shutdown")?.({}, ctx);
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
@@ -114,7 +114,7 @@ describe("codeindex_explore (tool)", () => {
 			expect(text.length).toBeLessThanOrEqual(Math.round(budget * 1.1));
 			expect(text).toContain("more callers"); // omission disclosed
 		} finally {
-			handlers.get("session_shutdown")?.({}, ctx);
+			await handlers.get("session_shutdown")?.({}, ctx);
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
