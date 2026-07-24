@@ -34,7 +34,7 @@
     "lint": "biome check src bin scripts test",
     "lint:boundary": "node scripts/check-boundary.mjs",
     "check:package": "node scripts/check-package.mjs",
-    "test": "vitest run --maxWorkers=4",
+    "test": "vitest run",
     "test:package": "node scripts/smoke-package.mjs",
     "check": "npm run lint:boundary && npm run typecheck && npm run lint && npm run test && npm run check:package && npm run test:package"
   },
