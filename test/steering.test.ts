@@ -55,9 +55,11 @@ describe("proactive navigation guidance (before_agent_start)", () => {
 	// the predicate must look at actual indexed symbols, which an empty dir has none of.
 	it("hasIndexedSymbols() is false for a directory with nothing indexed", () => {
 		const dir = mkdtempSync(join(tmpdir(), "codeindex-ws-"));
+		const ws = new WorkspaceManager(dir);
 		try {
-			expect(new WorkspaceManager(dir).hasIndexedSymbols()).toBe(false);
+			expect(ws.hasIndexedSymbols()).toBe(false);
 		} finally {
+			ws.shutdown();
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});

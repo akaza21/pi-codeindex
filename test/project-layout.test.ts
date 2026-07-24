@@ -19,9 +19,12 @@ function fakeFs(files: Record<string, string>): FileSystem {
 
 describe("buildProjectLayout / applyTsLayout", () => {
 	it("reads tsconfig baseUrl + paths and maps a wildcard alias with the right separator", () => {
+		const root = "r";
 		const layout = buildProjectLayout(
-			fakeFs({ "/r/tsconfig.json": '{"compilerOptions":{"baseUrl":".","paths":{"@app/*":["src/app/*"]}}}' }),
-			"/r",
+			fakeFs({
+				[join(root, "tsconfig.json")]: '{"compilerOptions":{"baseUrl":".","paths":{"@app/*":["src/app/*"]}}}',
+			}),
+			root,
 		);
 		expect(layout.tsBaseUrl).toBe("");
 		expect(applyTsLayout(layout, "@app/util")).toEqual(["src/app/util"]); // not "src/apputil"
@@ -29,29 +32,34 @@ describe("buildProjectLayout / applyTsLayout", () => {
 	});
 
 	it("tolerates comments/trailing commas in tsconfig and reads the go.mod module", () => {
+		const root = "r";
 		const layout = buildProjectLayout(
 			fakeFs({
-				"/r/tsconfig.json": '{\n// c\n"compilerOptions":{"baseUrl":"src",},\n}',
-				"/r/go.mod": "module example.com/m\n\ngo 1.21\n",
+				[join(root, "tsconfig.json")]: '{\n// c\n"compilerOptions":{"baseUrl":"src",},\n}',
+				[join(root, "go.mod")]: "module example.com/m\n\ngo 1.21\n",
 			}),
-			"/r",
+			root,
 		);
 		expect(layout.tsBaseUrl).toBe("src");
 		expect(layout.goModule).toBe("example.com/m");
 	});
 
 	it("degrades safely on a malformed tsconfig (paths value not an array)", () => {
+		const root = "r";
 		const layout = buildProjectLayout(
-			fakeFs({ "/r/tsconfig.json": '{"compilerOptions":{"paths":{"@app/*":"src/app/*"}}}' }),
-			"/r",
+			fakeFs({ [join(root, "tsconfig.json")]: '{"compilerOptions":{"paths":{"@app/*":"src/app/*"}}}' }),
+			root,
 		);
 		expect(layout.tsPaths).toEqual([]); // bad entry ignored, no throw
 	});
 
 	it("maps non-wildcard aliases and preserves multi-target order", () => {
+		const root = "r";
 		const layout = buildProjectLayout(
-			fakeFs({ "/r/tsconfig.json": '{"compilerOptions":{"paths":{"@x":["a/x.ts"],"@y/*":["p/*","q/*"]}}}' }),
-			"/r",
+			fakeFs({
+				[join(root, "tsconfig.json")]: '{"compilerOptions":{"paths":{"@x":["a/x.ts"],"@y/*":["p/*","q/*"]}}}',
+			}),
+			root,
 		);
 		expect(applyTsLayout(layout, "@x")).toEqual(["a/x.ts"]);
 		expect(applyTsLayout(layout, "@y/z")).toEqual(["p/z", "q/z"]);

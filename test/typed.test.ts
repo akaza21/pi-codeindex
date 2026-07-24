@@ -111,7 +111,7 @@ describe("L3 typed resolution (in-process TypeScript)", () => {
 		const service = new TsTypeService(root);
 		service.reset([join(root, "main.ts")]);
 		expect(service.definitions(join(root, "main.ts"), 3, 8)).toContainEqual({
-			file: join(root, "src/app/util.ts"),
+			file: join(root, "src/app/util.ts").replaceAll("\\", "/"),
 			line: 1,
 			col: 16,
 		});
