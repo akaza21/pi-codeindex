@@ -28,6 +28,7 @@ const port = parentPort;
 
 port.once("message", async (message: IndexWorkerRequest) => {
 	let close: (() => void) | undefined;
+	let response: IndexWorkerResponse;
 	try {
 		const maxFiles = configuredMaxFiles();
 		const { store, indexer } = openIndex({
@@ -38,12 +39,16 @@ port.once("message", async (message: IndexWorkerRequest) => {
 		});
 		close = () => store.close();
 		const result = await indexer.sync(message.only ? { only: message.only } : {});
-		port.postMessage({ result } satisfies IndexWorkerResponse);
+		response = { result };
 	} catch (error) {
-		port.postMessage({ error: error instanceof Error ? error.message : String(error) } satisfies IndexWorkerResponse);
-	} finally {
-		close?.();
+		response = { error: error instanceof Error ? error.message : String(error) };
 	}
+	try {
+		close?.();
+	} catch (error) {
+		if ("result" in response) response = { error: error instanceof Error ? error.message : String(error) };
+	}
+	port.postMessage(response);
 });
 
 port.postMessage({ ready: true } satisfies IndexWorkerResponse);

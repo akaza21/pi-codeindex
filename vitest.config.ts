@@ -4,9 +4,9 @@ export default defineConfig({
 	test: {
 		include: ["test/**/*.test.ts"],
 		environment: "node",
-		// Windows runs these SQLite and worker-thread integration tests serially to avoid
-		// native teardown contention; other platforms use a small bounded pool.
-		maxWorkers: process.platform === "win32" ? 1 : 4,
+		// Several integration tests open SQLite databases and worker threads. A small fixed
+		// pool keeps the suite reliable on CI runners and high-core developer machines.
+		maxWorkers: 4,
 		testTimeout: 30_000,
 	},
 });
