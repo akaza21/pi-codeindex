@@ -8,9 +8,9 @@
  * repo behaves exactly like before (no prefixes).
  */
 
-import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Static, type TSchema, Type } from "typebox";
+import { readRepoFile } from "../engine/adapters/repo-path.ts";
 import type {
 	EmptyReason,
 	ExplorationResult,
@@ -326,7 +326,6 @@ function fanOut(
 }
 
 export function registerTools(pi: ExtensionAPI, resolveWorkspace: ResolveWorkspace): void {
-	const fs = new NodeFileSystem();
 	const parser = new TreeSitterParser();
 	const read = <P extends RepoFilter>(
 		name: string,
@@ -500,7 +499,7 @@ export function registerTools(pi: ExtensionAPI, resolveWorkspace: ResolveWorkspa
 				if (notice) lines.push(`${tag}${notice}`);
 				const result = manager.getStore().explore(sel);
 				for (const line of renderExploration(result, params.budget ?? DEFAULT_EXPLORE_BUDGET, sel, (rel) =>
-					fs.readFile(join(repo.path, rel)),
+					readRepoFile(repo.path, rel),
 				)) {
 					lines.push(`${tag}${line}`);
 				}
@@ -535,6 +534,7 @@ export function registerTools(pi: ExtensionAPI, resolveWorkspace: ResolveWorkspa
 				signal?.throwIfAborted();
 				if (notice) lines.push(`${tag}${notice}`);
 				try {
+					const fs = new NodeFileSystem(repo.path);
 					const hits = await structuralSearch(
 						{ store: manager.getStore(), fs, parser, root: repo.path },
 						{
