@@ -286,12 +286,13 @@ export class WorkspaceManager {
 		for (const repo of this.repos()) this.managerFor(repo.path).startWatching();
 	}
 
-	shutdown(): void {
+	async shutdown(): Promise<void> {
 		this.shuttingDown = true;
 		this.queuedWarmupPaths.clear();
 		for (const job of this.syncQueue.splice(0)) job.reject(new Error("workspace shut down before sync started"));
-		for (const manager of this.managers.values()) manager.shutdown();
+		const managers = [...this.managers.values()];
 		this.managers.clear();
+		await Promise.all(managers.map((manager) => manager.shutdown()));
 	}
 }
 

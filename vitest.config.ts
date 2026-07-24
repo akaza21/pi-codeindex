@@ -4,8 +4,9 @@ export default defineConfig({
 	test: {
 		include: ["test/**/*.test.ts"],
 		environment: "node",
-		// Several integration tests open SQLite databases and worker threads. A small fixed
-		// pool keeps the suite reliable on CI runners and high-core developer machines.
+		// Avoid nesting IndexManager workers inside process forks on Windows. A small fixed
+		// pool keeps the SQLite integration suite reliable on high-core machines.
+		pool: process.platform === "win32" ? "threads" : "forks",
 		maxWorkers: 4,
 		testTimeout: 30_000,
 	},

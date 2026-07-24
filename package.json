@@ -40,6 +40,7 @@
   },
   "dependencies": {
     "@tree-sitter-grammars/tree-sitter-kotlin": "^1.1.0",
+    "chokidar": "^5.0.0",
     "ignore": "^7.0.6",
     "jiti": "^2.7.0",
     "tree-sitter-c": "^0.24.1",

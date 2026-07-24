@@ -36,9 +36,9 @@ export default function (pi: ExtensionAPI): void {
 		return undefined;
 	});
 
-	pi.on("session_shutdown", () => {
-		for (const workspace of workspaces.values()) workspace.shutdown();
+	pi.on("session_shutdown", async () => {
+		const pending = [...workspaces.values()].map((workspace) => workspace.shutdown());
 		workspaces.clear();
-		return undefined;
+		await Promise.all(pending);
 	});
 }

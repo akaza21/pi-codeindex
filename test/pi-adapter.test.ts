@@ -38,8 +38,8 @@ describe("pi adapter", () => {
 		ctx = { cwd: work };
 	});
 
-	afterAll(() => {
-		handlers.get("session_shutdown")?.({}, ctx);
+	afterAll(async () => {
+		await handlers.get("session_shutdown")?.({}, ctx);
 		rmSync(work, { recursive: true, force: true });
 		if (work2) rmSync(work2, { recursive: true, force: true });
 		if (work3) rmSync(work3, { recursive: true, force: true });

@@ -9,8 +9,10 @@
  *   process alive and are torn down on shutdown.
  */
 
-import { existsSync, type FSWatcher, watch } from "node:fs";
+import { existsSync } from "node:fs";
+import { relative } from "node:path";
 import { Worker } from "node:worker_threads";
+import { type FSWatcher, watch } from "chokidar";
 import { defaultDbPath, languageForFile, openIndex, type Store, type SyncResult } from "../engine/index.ts";
 import { isPrunedSourcePath } from "../engine/indexer/source-filter.ts";
 import { MAX_INDEX_FILE_LIMIT, validateIndexFileLimit } from "../limits.ts";
@@ -218,11 +220,11 @@ export class IndexManager {
 			this.workers.add(worker);
 			let ready = false;
 			let settled = false;
+			let response: IndexWorkerResponse | undefined;
 			const settle = (fn: () => void): void => {
 				if (settled) return;
 				settled = true;
 				this.workers.delete(worker);
-				void worker.terminate().catch(() => undefined);
 				fn();
 			};
 			worker.on("message", (message: IndexWorkerResponse) => {
@@ -235,21 +237,24 @@ export class IndexManager {
 					} satisfies IndexWorkerRequest);
 					return;
 				}
-				if (message.result) settle(() => resolve(message.result as SyncResult));
-				else settle(() => reject(new Error(message.error ?? "index worker returned no result")));
+				response = message;
 			});
 			worker.once("error", (error) =>
 				settle(() => reject(ready ? error : new WorkerUnavailableError(String(error)))),
 			);
-			worker.once("exit", (code) =>
-				settle(() =>
-					reject(
-						ready
-							? new Error(`index worker exited with code ${code}`)
-							: new WorkerUnavailableError(`index worker exited with code ${code} before ready`),
-					),
-				),
-			);
+			worker.once("exit", (code) => {
+				settle(() => {
+					if (!ready) {
+						reject(new WorkerUnavailableError(`index worker exited with code ${code} before ready`));
+					} else if (code !== 0) {
+						reject(new Error(`index worker exited with code ${code}`));
+					} else if (response?.result) {
+						resolve(response.result);
+					} else {
+						reject(new Error(response?.error ?? "index worker returned no result"));
+					}
+				});
+			});
 		});
 	}
 
@@ -257,10 +262,23 @@ export class IndexManager {
 	startWatching(): void {
 		if (this.watcher) return;
 		try {
-			this.watcher = watch(this.root, { recursive: true, persistent: false }, (_event, filename) => {
-				if (!existsSync(this.root)) return this.stopWatching();
+			this.watcher = watch(this.root, {
+				followSymlinks: false,
+				ignoreInitial: true,
+				ignored: (path) => isIgnoredWatchPath(this.root, path),
+				persistent: false,
+				// Node 24's Windows fs-event backend can abort the process while paths are
+				// changing. Polling avoids that native crash and remains fully portable.
+				usePolling: process.platform === "win32",
+			});
+			this.watcher.on("all", (_event, path) => {
+				if (!existsSync(this.root)) {
+					void this.stopWatching();
+					return;
+				}
+				const filename = relative(this.root, path).replaceAll("\\", "/");
 				if (!isWatchableChange(filename)) return;
-				this.pendingChanges.add(String(filename).replaceAll("\\", "/"));
+				this.pendingChanges.add(filename);
 				if (this.watchTimer) clearTimeout(this.watchTimer);
 				this.watchTimer = setTimeout(() => {
 					this.watchTimer = undefined;
@@ -271,8 +289,8 @@ export class IndexManager {
 			this.watcherError = undefined;
 			this.watcher.on("error", (error) => {
 				this.watcherState = "error";
-				this.watcherError = error.message;
-				this.stopWatching(true);
+				this.watcherError = error instanceof Error ? error.message : String(error);
+				void this.stopWatching(true);
 			});
 		} catch (error) {
 			this.watcherState = "unavailable";
@@ -280,30 +298,26 @@ export class IndexManager {
 		}
 	}
 
-	stopWatching(preserveState = false): void {
+	async stopWatching(preserveState = false): Promise<void> {
 		if (this.watchTimer) {
 			clearTimeout(this.watchTimer);
 			this.watchTimer = undefined;
 		}
-		if (this.watcher) {
-			try {
-				this.watcher.close();
-			} catch {}
-			this.watcher = undefined;
-		}
+		const watcher = this.watcher;
+		this.watcher = undefined;
 		if (!preserveState) {
 			this.watcherState = "inactive";
 			this.watcherError = undefined;
 		}
+		await watcher?.close().catch(() => undefined);
 	}
 
 	/** Terminate background workers and close the store; used on session shutdown. */
-	shutdown(): void {
-		this.stopWatching();
-		for (const worker of [...this.workers]) {
-			this.workers.delete(worker);
-			void worker.terminate().catch(() => undefined);
-		}
+	async shutdown(): Promise<void> {
+		await this.stopWatching();
+		const workers = [...this.workers];
+		this.workers.clear();
+		await Promise.all(workers.map((worker) => worker.terminate().catch(() => undefined)));
 		this.store?.close();
 		this.store = undefined;
 	}
@@ -337,6 +351,14 @@ function isWatchableChange(filename: string | null): boolean {
 	if (isIgnoreFile(normalized) || isNestedRepositoryMarker(normalized)) return true;
 	if (isPrunedSourcePath(normalized)) return false;
 	return isLayoutFile(normalized) || languageForFile(normalized) !== undefined;
+}
+
+function isIgnoredWatchPath(root: string, path: string): boolean {
+	const normalized = relative(root, path).replaceAll("\\", "/");
+	if (!normalized || isIgnoreFile(normalized)) return false;
+	const parts = normalized.split("/");
+	if (parts.length > 1 && parts.at(-1) === ".git") return false;
+	return isPrunedSourcePath(normalized);
 }
 
 /** Per-repo config files that change how imports resolve; a change re-derives the whole layout. */
