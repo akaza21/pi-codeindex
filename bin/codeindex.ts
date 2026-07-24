@@ -3,6 +3,7 @@
 
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
+import { readRepoFile } from "../src/engine/adapters/repo-path.ts";
 import {
 	defaultDbPath,
 	type ExplorationResult,
@@ -188,11 +189,7 @@ function printOccurrences(hits: OccurrenceHit[], arrow: (h: OccurrenceHit) => st
 }
 
 function readSource(root: string, rel: string): string | undefined {
-	try {
-		return readFileSync(resolve(root, rel), "utf8");
-	} catch {
-		return undefined;
-	}
+	return readRepoFile(root, rel);
 }
 
 const EXPLORE_BODY_LINES = 12;
@@ -416,7 +413,7 @@ async function run(
 			const pattern = ensureQuery();
 			if (!args.lang) throw new Error("match requires --lang <language>");
 			const hits = await structuralSearch(
-				{ store, fs: new NodeFileSystem(), parser: new TreeSitterParser(), root },
+				{ store, fs: new NodeFileSystem(root), parser: new TreeSitterParser(), root },
 				{ lang: args.lang, pattern, ...(args.path ? { path: args.path } : {}), limit: args.limit },
 			);
 			printMatches(hits);
