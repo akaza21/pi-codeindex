@@ -76,7 +76,7 @@ export function openIndex(options: OpenIndexOptions): OpenedIndex {
 	const parser = options.parser ?? new TreeSitterParser();
 	const store = openCacheStore(options.root, options.dbPath);
 	const indexer = new Indexer(options.root, {
-		fs: new NodeFileSystem(),
+		fs: new NodeFileSystem(options.root),
 		parser,
 		store,
 		providers: options.providers ?? providersFor(options.root, { typed: options.typed }),

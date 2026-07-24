@@ -1,8 +1,9 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
-import { type OccurrenceRecord, openIndex, type Store } from "../src/engine/index.ts";
+import { type OccurrenceRecord, openIndex, SqliteStore, type Store } from "../src/engine/index.ts";
 
 describe("moniker persistence", () => {
 	it("rebuilds a corrupt cache database instead of leaving the package unusable", async () => {
@@ -52,6 +53,84 @@ describe("moniker persistence", () => {
 			reopenedStore?.close();
 			firstStore?.close();
 			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("rebuilds a cache containing an escaping file path before serving it", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "codeindex-cache-boundary-"));
+		const dbPath = join(dir, "index.db");
+		writeFileSync(join(dir, "safe.ts"), "export function safe() { return true; }\n");
+		let reopened: Store | undefined;
+		try {
+			const first = openIndex({ root: dir, dbPath });
+			await first.indexer.sync();
+			first.store.close();
+
+			const raw = new DatabaseSync(dbPath);
+			raw.prepare("INSERT INTO files (path, lang, mtime_ms, size, hash) VALUES (?, ?, ?, ?, ?)").run(
+				"../outside.ts",
+				"typescript",
+				0,
+				0,
+				"",
+			);
+			raw.close();
+
+			const opened = openIndex({ root: dir, dbPath });
+			reopened = opened.store;
+			expect(reopened.allFiles()).toEqual([]);
+			await opened.indexer.sync();
+			expect(reopened.definitions("safe", 5)).toHaveLength(1);
+		} finally {
+			reopened?.close();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects unsafe file paths at the persistence boundary", () => {
+		const dir = mkdtempSync(join(tmpdir(), "codeindex-store-boundary-"));
+		const store = new SqliteStore(dir, join(dir, "index.db"));
+		try {
+			expect(() =>
+				store.upsertFileFacts("../outside.ts", "typescript", 0, 0, "", {
+					symbols: [],
+					references: [],
+					imports: [],
+					scopes: [],
+					scopeDefs: [],
+				}),
+			).toThrow("outside the repository");
+		} finally {
+			store.close();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("does not reuse an index created for a different repository root", async () => {
+		const parent = mkdtempSync(join(tmpdir(), "codeindex-root-boundary-"));
+		const firstRoot = join(parent, "first");
+		const secondRoot = join(parent, "second");
+		const dbPath = join(parent, "shared.db");
+		mkdirSync(firstRoot);
+		mkdirSync(secondRoot);
+		writeFileSync(join(firstRoot, "first.ts"), "export function firstOnly() { return 1; }\n");
+		writeFileSync(join(secondRoot, "second.ts"), "export function secondOnly() { return 2; }\n");
+		let secondStore: Store | undefined;
+		try {
+			const first = openIndex({ root: firstRoot, dbPath });
+			await first.indexer.sync();
+			expect(first.store.definitions("firstOnly", 5)).toHaveLength(1);
+			first.store.close();
+
+			const second = openIndex({ root: secondRoot, dbPath });
+			secondStore = second.store;
+			expect(secondStore.definitions("firstOnly", 5)).toEqual([]);
+			expect(secondStore.allFiles()).toEqual([]);
+			await second.indexer.sync();
+			expect(secondStore.definitions("secondOnly", 5)).toHaveLength(1);
+		} finally {
+			secondStore?.close();
+			rmSync(parent, { recursive: true, force: true });
 		}
 	});
 

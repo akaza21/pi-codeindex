@@ -11,7 +11,7 @@
  * rebuilds rather than migrating in place.
  */
 
-export const INDEX_FORMAT_VERSION = "12";
+export const INDEX_FORMAT_VERSION = "13";
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
