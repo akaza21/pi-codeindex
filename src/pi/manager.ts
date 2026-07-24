@@ -9,8 +9,10 @@
  *   process alive and are torn down on shutdown.
  */
 
-import { existsSync, type FSWatcher, watch } from "node:fs";
+import { existsSync } from "node:fs";
+import { relative } from "node:path";
 import { Worker } from "node:worker_threads";
+import { type FSWatcher, watch } from "chokidar";
 import { defaultDbPath, languageForFile, openIndex, type Store, type SyncResult } from "../engine/index.ts";
 import { isPrunedSourcePath } from "../engine/indexer/source-filter.ts";
 import { MAX_INDEX_FILE_LIMIT, validateIndexFileLimit } from "../limits.ts";
@@ -260,10 +262,17 @@ export class IndexManager {
 	startWatching(): void {
 		if (this.watcher) return;
 		try {
-			this.watcher = watch(this.root, { recursive: true, persistent: false }, (_event, filename) => {
+			this.watcher = watch(this.root, {
+				followSymlinks: false,
+				ignoreInitial: true,
+				ignored: (path) => isIgnoredWatchPath(this.root, path),
+				persistent: false,
+			});
+			this.watcher.on("all", (_event, path) => {
 				if (!existsSync(this.root)) return this.stopWatching();
+				const filename = relative(this.root, path).replaceAll("\\", "/");
 				if (!isWatchableChange(filename)) return;
-				this.pendingChanges.add(String(filename).replaceAll("\\", "/"));
+				this.pendingChanges.add(filename);
 				if (this.watchTimer) clearTimeout(this.watchTimer);
 				this.watchTimer = setTimeout(() => {
 					this.watchTimer = undefined;
@@ -274,7 +283,7 @@ export class IndexManager {
 			this.watcherError = undefined;
 			this.watcher.on("error", (error) => {
 				this.watcherState = "error";
-				this.watcherError = error.message;
+				this.watcherError = error instanceof Error ? error.message : String(error);
 				this.stopWatching(true);
 			});
 		} catch (error) {
@@ -289,9 +298,7 @@ export class IndexManager {
 			this.watchTimer = undefined;
 		}
 		if (this.watcher) {
-			try {
-				this.watcher.close();
-			} catch {}
+			void this.watcher.close().catch(() => undefined);
 			this.watcher = undefined;
 		}
 		if (!preserveState) {
@@ -340,6 +347,14 @@ function isWatchableChange(filename: string | null): boolean {
 	if (isIgnoreFile(normalized) || isNestedRepositoryMarker(normalized)) return true;
 	if (isPrunedSourcePath(normalized)) return false;
 	return isLayoutFile(normalized) || languageForFile(normalized) !== undefined;
+}
+
+function isIgnoredWatchPath(root: string, path: string): boolean {
+	const normalized = relative(root, path).replaceAll("\\", "/");
+	if (!normalized || isIgnoreFile(normalized)) return false;
+	const parts = normalized.split("/");
+	if (parts.length > 1 && parts.at(-1) === ".git") return false;
+	return isPrunedSourcePath(normalized);
 }
 
 /** Per-repo config files that change how imports resolve; a change re-derives the whole layout. */
