@@ -12,16 +12,18 @@ import { RepositoryIgnore } from "./repository-ignore.ts";
 
 export class NodeFileSystem implements FileSystem {
 	private readonly root: string;
+	private readonly lexicalRoot: string;
 	private ignoreRules: RepositoryIgnore;
 
 	constructor(root: string) {
+		this.lexicalRoot = resolve(root);
 		this.root = canonicalRepositoryRoot(root);
 		this.ignoreRules = new RepositoryIgnore(this.root);
 	}
 
 	readFile(absPath: string): string | undefined {
 		try {
-			const path = existingPathWithinRoot(this.root, absPath, true);
+			const path = existingPathWithinRoot(this.root, absPath, true, this.lexicalRoot);
 			return path ? readFileSync(path, "utf8") : undefined;
 		} catch {
 			return undefined;
@@ -30,7 +32,7 @@ export class NodeFileSystem implements FileSystem {
 
 	stat(absPath: string): FileStat | undefined {
 		try {
-			const path = existingPathWithinRoot(this.root, absPath, true);
+			const path = existingPathWithinRoot(this.root, absPath, true, this.lexicalRoot);
 			if (!path) return undefined;
 			const s = lstatSync(path);
 			return { mtimeMs: s.mtimeMs, size: s.size };
@@ -40,23 +42,23 @@ export class NodeFileSystem implements FileSystem {
 	}
 
 	exists(absPath: string): boolean {
-		return existingPathWithinRoot(this.root, absPath, true) !== undefined;
+		return existingPathWithinRoot(this.root, absPath, true, this.lexicalRoot) !== undefined;
 	}
 
 	refreshIgnoreRules(root: string): void {
-		const canonical = existingPathWithinRoot(this.root, root);
+		const canonical = existingPathWithinRoot(this.root, root, false, this.lexicalRoot);
 		if (canonical !== this.root) return;
 		this.ignoreRules = new RepositoryIgnore(this.root);
 	}
 
 	isIgnored(root: string, relativePath: string, directory = false): boolean {
-		if (existingPathWithinRoot(this.root, root) !== this.root) return true;
+		if (existingPathWithinRoot(this.root, root, false, this.lexicalRoot) !== this.root) return true;
 		return this.ignoreRules.ignores(relativePath, directory);
 	}
 
 	*walk(root: string): Iterable<string> {
 		const start = resolve(root);
-		if (existingPathWithinRoot(this.root, start) !== this.root) return;
+		if (existingPathWithinRoot(this.root, start, false, this.lexicalRoot) !== this.root) return;
 		// A walk is a new filesystem snapshot. Re-read ignore files so repeated
 		// syncs through one Indexer observe `.gitignore` edits.
 		this.refreshIgnoreRules(start);
@@ -83,8 +85,8 @@ export class NodeFileSystem implements FileSystem {
 				// avoid cycles created by links back into an ancestor.
 				if (stat.isSymbolicLink()) continue;
 				if (stat.isDirectory()) {
-					if (!this.isIgnored(this.root, relativePath, true)) stack.push(full);
-				} else if (stat.isFile() && !this.isIgnored(this.root, relativePath)) {
+					if (!this.isIgnored(start, relativePath, true)) stack.push(full);
+				} else if (stat.isFile() && !this.isIgnored(start, relativePath)) {
 					yield full;
 				}
 			}

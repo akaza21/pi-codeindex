@@ -18,18 +18,25 @@ export function isSafeRepoRelativePath(path: string): boolean {
 
 /**
  * Resolve an existing path only when its real target remains beneath `canonicalRoot`.
- * Resolving both sides prevents `..`, prefix-collision, and symlink escapes.
+ * `lexicalRoot` may preserve a user-selected root symlink; the canonical check still
+ * prevents `..`, prefix-collision, and descendant symlink escapes.
  */
 export function existingPathWithinRoot(
 	canonicalRoot: string,
 	candidate: string,
 	rejectLeafSymlink = false,
+	lexicalRoot = canonicalRoot,
 ): string | undefined {
 	try {
-		const canonical = realpathSync(resolve(candidate));
+		const absolute = resolve(candidate);
+		const lexical = relative(lexicalRoot, absolute);
+		if (lexical !== "" && (isAbsolute(lexical) || lexical === ".." || lexical.startsWith(`..${sep}`))) {
+			return undefined;
+		}
+		const canonical = realpathSync(absolute);
 		const rel = relative(canonicalRoot, canonical);
 		if (rel !== "" && (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`))) return undefined;
-		if (rejectLeafSymlink && lstatSync(resolve(candidate)).isSymbolicLink()) return undefined;
+		if (rejectLeafSymlink && lstatSync(absolute).isSymbolicLink()) return undefined;
 		return canonical;
 	} catch {
 		return undefined;
