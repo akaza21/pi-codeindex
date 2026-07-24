@@ -48,7 +48,7 @@ describe("workspace discovery", () => {
 		const beta = ws.managerFor(ws.repos().find((r) => r.name === "beta")?.path as string);
 		expect(beta.getStore().definitions("alphaFn", 5)).toHaveLength(0); // isolated per repo
 
-		ws.shutdown();
+		await ws.shutdown();
 	});
 
 	it("bounds workspace warm-up concurrency while retaining all query repos", async () => {
@@ -91,7 +91,7 @@ describe("workspace discovery", () => {
 			expect(started).toBe(5);
 			expect(ws.repos()).toHaveLength(5);
 		} finally {
-			ws.shutdown();
+			await ws.shutdown();
 			rmSync(largeWork, { recursive: true, force: true });
 			if (previous === undefined) delete process.env.PI_CODEINDEX_TYPED;
 			else process.env.PI_CODEINDEX_TYPED = previous;
@@ -134,7 +134,7 @@ describe("workspace discovery", () => {
 			await new Promise<void>((resolve) => setImmediate(resolve));
 			expect(peak).toBe(1);
 		} finally {
-			ws.shutdown();
+			await ws.shutdown();
 			rmSync(typedWork, { recursive: true, force: true });
 			if (previous === undefined) delete process.env.PI_CODEINDEX_TYPED;
 			else process.env.PI_CODEINDEX_TYPED = previous;
