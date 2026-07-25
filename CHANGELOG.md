@@ -4,6 +4,8 @@ Notable user-facing changes are documented here. The project follows [Semantic V
 
 ## Unreleased
 
+## 0.1.0 - 2026-07-25
+
 ### Added
 
 - Local tree-sitter indexing for TypeScript/TSX, JavaScript, Python, Go, Java, Ruby, Kotlin, C#, C++, PHP, Scala, Rust, and C.
