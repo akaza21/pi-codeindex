@@ -30,7 +30,7 @@ Requires Node.js 22.19 or newer and pi 0.81.1 or newer.
 Install the npm package:
 
 ```bash
-pi install npm:pi-codeindex
+pi install npm:@akaza21/pi-codeindex
 ```
 
 Or install a local checkout while developing:
@@ -50,7 +50,7 @@ Use `codeindex_explore` when you know the symbol name. It returns the definition
 ### Use the standalone CLI
 
 ```bash
-npm install -g pi-codeindex
+npm install -g @akaza21/pi-codeindex
 
 cd /path/to/repository
 codeindex sync .
