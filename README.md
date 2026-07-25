@@ -17,6 +17,10 @@ Text search is useful for strings, but it makes an agent repeatedly scan files a
 
 It is a navigation aid, not a semantic rename engine or a prediction of which edits will break.
 
+## Supported languages
+
+Built-in indexing supports TypeScript, TSX, JavaScript, Python, Go, Java, Ruby, Kotlin, C#, C++, PHP, Scala, Rust, and C. All work without a compiler toolchain; optional TypeScript resolution and imported SCIP facts can add precision where available. See the [language support matrix](docs/languages.md) for resolution capabilities and known limits.
+
 ## Quick start
 
 Requires Node.js 22.19 or newer and pi 0.81.1 or newer.
