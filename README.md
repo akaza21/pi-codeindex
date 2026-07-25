@@ -1,6 +1,6 @@
 # pi-codeindex
 
-Local code navigation for [pi](https://github.com/earendil-works/pi) agents and the command line.
+Code navigation for [pi](https://github.com/earendil-works/pi) agents and the command line.
 
 pi-codeindex gives an agent a persistent map of definitions, references, callers, callees, inheritance, reverse-call reach, files, and AST shapes. It runs entirely on the user's machine: there is no server, network request, account, or telemetry in this package.
 
