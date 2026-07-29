@@ -89,7 +89,7 @@ describe("standalone CLI", () => {
 
 	it("an empty moniker query says so instead of exiting silently", () => {
 		const { stdout } = cli(["callers", dir, "--moniker", "bogus#nope@9:9"], project);
-		expect(stdout).toContain("no matching edges for moniker");
+		expect(stdout).toContain("no indexed declaration matches moniker");
 	});
 
 	it("rejects zero for limit, depth, and budget flags", () => {

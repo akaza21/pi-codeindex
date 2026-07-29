@@ -190,7 +190,7 @@ export interface OccurrenceHit {
 	sites?: number;
 }
 
-/** Why a by-name read returned nothing: not-found vs. defined-but-unused vs. suppressed-ambiguous. */
+/** Why a by-name read returned nothing: not-found, no stored edges, or high-fan-out ambiguity risk. */
 export type EmptyReason =
 	| { kind: "no-symbol" }
 	| { kind: "no-edges"; definitions: number }
@@ -275,6 +275,15 @@ export interface Store {
 	/** Return a definition with bounded callers, callees, hierarchy, and impact counts. */
 	explore(sel: { name: string } | { moniker: string }): ExplorationResult;
 	definitions(name: string, limit: number): SymbolHit[];
+	/** Return the declaration identified by an exact moniker, if it is still indexed. */
+	definitionByMoniker(moniker: string): SymbolHit | undefined;
+	/** Whether a matching declaration exists, independent of result limits. */
+	hasDefinitionInLanguage(name: string, language: string, kind?: string): boolean;
+	/**
+	 * Return name-only ambiguity counts when this name exceeds the resolver fan-out cap.
+	 * This is a conservative incompleteness warning, not a count of definitely suppressed edges.
+	 */
+	fanoutRisk(name: string): { definitions: number; sites: number } | undefined;
 	callers(name: string, limit: number): OccurrenceHit[];
 	callees(name: string, limit: number): OccurrenceHit[];
 	references(name: string, limit: number): OccurrenceHit[];
@@ -289,7 +298,7 @@ export interface Store {
 	/** Types that `name` extends/implements (outgoing inheritance edges). */
 	supertypes(name: string, limit: number): OccurrenceHit[];
 	impact(name: string, depth: number, limit: number): OccurrenceHit[];
-	/** Explain a zero-result by-name read: not indexed, indexed-but-unused, or fan-out-suppressed. */
+	/** Explain a zero-result by-name read without treating index absence as proof of source absence. */
 	diagnoseEmpty(name: string): EmptyReason;
 	files(pattern: string | undefined, limit: number): string[];
 	status(): IndexStatus;

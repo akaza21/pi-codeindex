@@ -39,6 +39,36 @@ try {
 	const sync = runNpm(["run", "--silent", "codeindex", "--", "sync", "sample"], project);
 	const search = runNpm(["run", "--silent", "codeindex", "--", "search", "add", "sample"], project);
 	const callers = runNpm(["run", "--silent", "codeindex", "--", "callers", "add", "sample"], project);
+	const extensionSmoke = `
+		import { join } from "node:path";
+		import { createJiti } from "jiti";
+		const jiti = createJiti(import.meta.url);
+		const loaded = await jiti.import("@akaza21/pi-codeindex/src/pi/index.ts");
+		const createExtension = loaded.default;
+		const tools = new Map();
+		const handlers = new Map();
+		createExtension({
+			registerTool: (tool) => tools.set(tool.name, tool),
+			on: (event, handler) => handlers.set(event, handler),
+			registerCommand() {},
+			registerShortcut() {},
+			registerFlag() {},
+		});
+		if (!tools.has("codeindex_status") || !tools.has("codeindex_sync")) {
+			throw new Error("packed pi extension did not register its tools");
+		}
+		if (!handlers.has("session_start") || !handlers.has("session_shutdown")) {
+			throw new Error("packed pi extension did not register its lifecycle");
+		}
+		const ctx = { cwd: join(process.cwd(), "sample") };
+		await handlers.get("session_start")({}, ctx);
+		await handlers.get("session_shutdown")({}, ctx);
+	`;
+	execFileSync(process.execPath, ["--input-type=module", "-e", extensionSmoke], {
+		cwd: project,
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "inherit"],
+	});
 
 	if (!help.includes("Usage:")) throw new Error("packed CLI help output was not recognized");
 	if (version.trim() !== packed.version) throw new Error("packed CLI version did not match its manifest");
@@ -46,7 +76,7 @@ try {
 	if (!search.includes("function add")) throw new Error("packed CLI search did not find the sample symbol");
 	if (!callers.includes("run → add")) throw new Error("packed CLI callers did not find the sample call edge");
 
-	console.log("packed CLI smoke test OK");
+	console.log("packed CLI and pi extension smoke test OK");
 } finally {
 	rmSync(temp, { recursive: true, force: true });
 }

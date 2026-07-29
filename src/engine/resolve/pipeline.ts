@@ -9,8 +9,8 @@
  *      inherited member is a structural answer, ranked by distance, never "certain").
  *
  * Within a phase each reference takes the FIRST provider (high tier → low) that returns
- * candidates — tiers are not merged. A single high-confidence target is emitted as-is;
- * multiple candidates are confidence-weighted so an ambiguous result is never reported
+ * candidates — tiers are not merged. A single target at the precise-score threshold is emitted as-is;
+ * multiple candidates are score-weighted so an ambiguous result is never reported
  * as certain. Higher provenance overwrites lower for the same range at the store.
  */
 

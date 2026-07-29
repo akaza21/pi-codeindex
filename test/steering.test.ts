@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { registerSteering, routableQuery } from "../src/pi/steering.ts";
+import { registerSteering } from "../src/pi/steering.ts";
 import { WorkspaceManager } from "../src/pi/workspace.ts";
 
 type BeforeAgentStart = (
@@ -22,28 +22,15 @@ function captureHandlers(indexed: boolean): Map<string, BeforeAgentStart> {
 	return handlers;
 }
 
-type ToolCall = (
-	event: { toolName: string; input: Record<string, unknown> },
-	ctx: { cwd: string },
-) => { block: boolean; reason: string } | undefined;
-
-function captureToolCall(resolveWorkspace: () => unknown): ToolCall {
-	const handlers = new Map<string, unknown>();
-	const pi = { on: (name: string, cb: unknown) => handlers.set(name, cb) };
-	registerSteering(
-		pi as unknown as Parameters<typeof registerSteering>[0],
-		resolveWorkspace as unknown as Parameters<typeof registerSteering>[1],
-	);
-	return handlers.get("tool_call") as ToolCall;
-}
-
 describe("proactive navigation guidance (before_agent_start)", () => {
 	it("appends the codeindex guidance to the system prompt when the index has symbols", () => {
 		const handler = captureHandlers(true).get("before_agent_start");
 		const result = handler?.({ systemPrompt: "BASE PROMPT" }, { cwd: "/r" });
 		expect(result?.systemPrompt).toContain("BASE PROMPT"); // chained onto the existing prompt
-		expect(result?.systemPrompt).toContain("prefer the codeindex_* tools");
+		expect(result?.systemPrompt).toContain("Use codeindex_* for indexed symbol navigation");
 		expect(result?.systemPrompt).toContain("codeindex_def");
+		expect(result?.systemPrompt).toContain("not probabilities");
+		expect(result?.systemPrompt).toContain("Go structural interface satisfaction is not computed");
 	});
 
 	it("leaves the system prompt untouched when nothing is indexed", () => {
@@ -76,67 +63,9 @@ describe("proactive navigation guidance (before_agent_start)", () => {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
-});
 
-describe("reactive steering", () => {
-	it("nudges the same grep once per cwd", () => {
-		const handler = captureToolCall(() => ({
-			repos: () => [{ path: "/repo" }],
-			managerFor: () => ({
-				readyStore: () => ({
-					search: () => [{ kind: "class", name: "Calculator", file: "calc.ts", range: [1, 0, 1, 10] }],
-				}),
-			}),
-		}));
-		const event = { toolName: "grep", input: { pattern: "Calculator" } };
-		expect(handler(event, { cwd: "/one" })?.block).toBe(true);
-		expect(handler(event, { cwd: "/one" })).toBeUndefined();
-		expect(handler(event, { cwd: "/two" })?.block).toBe(true);
-	});
-
-	it("fails open when index search throws", () => {
-		const handler = captureToolCall(() => ({
-			repos: () => [{ path: "/repo" }],
-			managerFor: () => ({
-				readyStore: () => ({
-					search: () => {
-						throw new Error("unavailable");
-					},
-				}),
-			}),
-		}));
-		expect(() => handler({ toolName: "grep", input: { pattern: "Calculator" } }, { cwd: "/repo" })).not.toThrow();
-		expect(handler({ toolName: "grep", input: { pattern: "Calculator" } }, { cwd: "/repo" })).toBeUndefined();
-	});
-});
-
-describe("routableQuery", () => {
-	it("routes symbol-shaped grep patterns", () => {
-		expect(routableQuery("grep", { pattern: "resolveOccurrences" })).toBe("resolveOccurrences");
-	});
-
-	it("passes through literal multi-word and path-like searches", () => {
-		expect(routableQuery("grep", { pattern: "TODO fix this" })).toBeUndefined();
-		expect(routableQuery("grep", { pattern: "src/foo" })).toBeUndefined();
-	});
-
-	it("passes through short and regex-heavy patterns", () => {
-		expect(routableQuery("grep", { pattern: "ab" })).toBeUndefined();
-		expect(routableQuery("grep", { pattern: "^(foo|bar)+.*$" })).toBeUndefined();
-	});
-
-	it("never routes find filename globs", () => {
-		expect(routableQuery("find", { glob: "Calculator" })).toBeUndefined();
-		expect(routableQuery("find", { pattern: "*.ts" })).toBeUndefined();
-	});
-
-	it("passes through literal and path-scoped grep calls", () => {
-		expect(routableQuery("find", { pattern: "src/foo" })).toBeUndefined();
-		expect(routableQuery("find", { pattern: "foo.ts" })).toBeUndefined();
-		expect(routableQuery("find", { glob: "**/util" })).toBeUndefined();
-		expect(routableQuery("find", { pattern: "foo bar" })).toBeUndefined();
-		expect(routableQuery("grep", { pattern: "Calculator", literal: true })).toBeUndefined();
-		expect(routableQuery("grep", { pattern: "Calculator", path: "src" })).toBeUndefined();
-		expect(routableQuery("grep", { pattern: "config.ts" })).toBeUndefined();
+	it("does not intercept or block grep/find calls", () => {
+		const handlers = captureHandlers(true);
+		expect(handlers.has("tool_call")).toBe(false);
 	});
 });

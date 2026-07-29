@@ -10,7 +10,7 @@ Text search is useful for strings, but it makes an agent repeatedly scan files a
 
 - one local SQLite index across 14 language IDs;
 - repo-local monikers that distinguish same-named declarations;
-- confidence and provenance on resolved references;
+- heuristic resolution scores and provenance on resolved references;
 - background incremental updates in pi and deterministic snapshot reads in the CLI;
 - optional TypeScript compiler resolution and external SCIP facts when more precision is available; and
 - bounded outputs designed for an agent's context window.
@@ -39,7 +39,7 @@ Or install a local checkout while developing:
 pi install /path/to/pi-codeindex
 ```
 
-Start pi inside a repository. The extension warms the index in the background. For example:
+Start pi inside a repository. The extension warms and watches that repository in the background. Child repositories discovered from a container directory are indexed on demand rather than all being watched at startup. For example:
 
 ```text
 Use codeindex_status, then use codeindex_explore to explain openIndex and show who calls it.
@@ -70,7 +70,7 @@ Standalone reads are snapshots. Run `codeindex sync` after edits; the CLI does n
 | “Who uses this function?” | `codeindex_callers` or `codeindex_refs` |
 | “What does this function depend on?” | `codeindex_callees` |
 | “Which callers can reach this symbol?” | `codeindex_impact` |
-| “Which types implement or extend this?” | `codeindex_implementers` / `codeindex_supertypes` |
+| “Which types explicitly implement or extend this?” | `codeindex_implementers` / `codeindex_supertypes` |
 | “Find code with this AST shape.” | `codeindex_match` |
 | “Is the index current and is watching active?” | `codeindex_status` |
 
@@ -83,13 +83,13 @@ pi-codeindex prefers the most specific available resolver and does not merge low
 1. optional TypeScript compiler resolution;
 2. lexical scope resolution;
 3. compiler-free import/package and same-file binding;
-4. bounded, lower-confidence same-name candidates.
+4. bounded, lower-score same-name candidates.
 
 Imported compiler-produced SCIP facts replace heuristic facts at the exact source locations they cover.
 
-Precise bindings normally report confidence `0.9–1.0`. Ambiguous candidates share confidence, and name-only fan-out above eight candidates is suppressed. Results identify whether they came from typed, scoped, syntactic, or SCIP resolution.
+Resolution scores are heuristic ranking evidence, not calibrated probabilities or a guarantee of completeness. Precisely resolved bindings normally score `0.9–1.0`. Ambiguous candidates share lower scores, and name-only fan-out above eight candidates is suppressed rather than expanded into every possible edge. When suppression is reported, use source search, typed resolution, or imported SCIP facts; selecting a moniker cannot recover an edge that was never stored.
 
-Resolution coverage differs by language. The [language support matrix](docs/languages.md) lists import binding, receiver handling, inheritance, and typed-index support.
+Resolution coverage differs by language. In particular, Go's structural interface satisfaction is not computed by the built-in index. The [language support matrix](docs/languages.md) lists import binding, receiver handling, inheritance, and typed-index support.
 
 ## Typed and SCIP precision
 

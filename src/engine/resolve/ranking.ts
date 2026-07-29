@@ -1,6 +1,6 @@
 /**
  * Candidate weighting from free signals. A reference may bind to several
- * candidates (recall-first); we assign each a confidence the model can use to pick.
+ * candidates within a bounded fan-out; each receives a heuristic ranking score.
  *
  *   - precise bindings (same-file, import) keep high confidence per candidate
  *   - ambiguous name-only matches share confidence equally (1/N) so a 10-way match is

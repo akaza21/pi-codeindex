@@ -254,7 +254,7 @@ try {
 		`unique top-rank precision: ${uniqueTopRankExact}/${uniqueTopRankLocations} exact (${pct(uniqueTopRankExact, uniqueTopRankLocations)}), ${uniqueTopRankEquivalent}/${uniqueTopRankLocations} equivalent (${pct(uniqueTopRankEquivalent, uniqueTopRankLocations)})`,
 	);
 	console.log(
-		`high-confidence top-1 (>= ${HIGH_CONFIDENCE}): ${highConfidenceExact}/${highConfidenceLocations} exact (${pct(highConfidenceExact, highConfidenceLocations)}), ${highConfidenceEquivalent}/${highConfidenceLocations} equivalent (${pct(highConfidenceEquivalent, highConfidenceLocations)})`,
+		`high-score top-1 (>= ${HIGH_CONFIDENCE}): ${highConfidenceExact}/${highConfidenceLocations} exact (${pct(highConfidenceExact, highConfidenceLocations)}), ${highConfidenceEquivalent}/${highConfidenceLocations} equivalent (${pct(highConfidenceEquivalent, highConfidenceLocations)})`,
 	);
 	console.log(
 		`candidate set size: ${average(totalCandidates, comparableLocations)} average, ${maxCandidates} maximum at exact-comparable locations`,
@@ -273,7 +273,7 @@ try {
 
 	printBreakdown("top-1 by provenance", byProvenance);
 	printBreakdown("top-1 by role", byRole);
-	printBreakdown("top-1 by confidence", byConfidence);
+	printBreakdown("top-1 by resolution score", byConfidence);
 
 	const misses = comparableLocations - candidateRecall;
 	console.log(`\nexact-location candidate misses: ${misses}`);

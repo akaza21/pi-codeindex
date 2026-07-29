@@ -17,13 +17,13 @@ Each reference is resolved by the strongest applicable method:
 1. Optional TypeScript compiler resolution handles typed TS/JS receiver dispatch and aliases.
 2. Lexical resolution binds tracked names to the nearest declaration in the same file.
 3. Compiler-free resolution handles supported imports, packages, same-file declarations, and `this`/`self` members.
-4. When no precise binding exists, up to eight compatible same-name declarations may be returned at lower confidence.
+4. When no precise binding exists, up to eight compatible same-name declarations may be returned at a lower score.
 
 The first method that produces candidates wins; results from weaker methods are not mixed into it. Locals that are not indexed as declarations suppress a guess rather than being connected to an unrelated same-named symbol.
 
 SCIP is a separate, optional interoperability path. A user-generated `.scip` file can contribute compiler-produced bindings at the exact source locations it covers. pi-codeindex does not download or run language indexers. Imported facts replace heuristic facts only at those locations and must be regenerated after relevant source changes.
 
-Results carry provenance (`typed`, `scoped`, `syntactic`, or `scip`) and confidence. Precise bindings are normally `0.9–1.0`; ambiguous same-name candidates share lower confidence.
+Results carry provenance (`typed`, `scoped`, `syntactic`, or `scip`) and a heuristic resolution score. The score orders evidence; it is not a calibrated probability and does not establish completeness. Precisely resolved bindings are normally `0.9–1.0`; ambiguous same-name candidates share lower scores. Name-only sets above eight declarations are suppressed rather than materialized as every possible edge.
 
 ## Local cache
 
@@ -37,11 +37,11 @@ SQLite WAL allows queries to read the last committed snapshot while a background
 
 A full sync walks a deterministic source selection, follows repository `.gitignore` rules, applies the configured file cap, and content-hashes the selected files before parsing only changed content. Files no longer in the selected corpus are removed, including when a lower cap replaces a larger one.
 
-In pi, supported filesystem events are batched for 750 ms and normally trigger a changed-file sync. Changed paths are content-checked, and project-layout, ignore-rule, or nested-repository boundary changes trigger a full refresh. Reads can continue against the previous committed snapshot while this happens.
+In pi, supported filesystem events are batched for 750 ms and normally trigger a changed-file sync. Changed paths are content-checked, and project-layout, ignore-rule, nested-repository boundary, unknown-path, or event-storm changes trigger a full refresh. Reads can continue against the previous committed snapshot while this happens.
 
 Compiler-free incremental resolution normally updates the changed files and relationships that can depend on them. Typed TypeScript mode rebuilds its compiler program for each changed snapshot, which is why it is opt-in, defaults to 500 files, and serializes repository syncs.
 
-If recursive watching is unavailable, `codeindex_status` reports it and `codeindex_sync` remains the recovery path.
+Supported watcher setup and backend errors degrade watcher status without disabling manual indexing. If watching is disabled or unavailable, `codeindex_status` reports it and `codeindex_sync` remains the recovery path.
 
 ## Graph queries
 
@@ -53,11 +53,11 @@ Structural search is different: it runs a supplied tree-sitter query against cur
 
 ## Pi and workspaces
 
-At session start, the extension discovers repositories, queues index warm-up, and starts available watchers. Query tools read ready snapshots; `codeindex_sync` waits for its selected repositories to finish.
+At session start, the extension discovers repositories and warms and watches only the repository containing cwd. When cwd is a container of several repositories, no child watcher starts automatically; query tools warm matching repositories on demand. `codeindex_sync` waits for its selected repositories to finish.
 
 Inside a Git repository, the enclosing repository is selected. Outside one, pi can discover Git or build-marker roots to depth 4. Queries can cover up to eight repositories, prioritizing the current one, while background syncs are limited to two repositories at once—or one in typed mode. Each repository has its own cache, and there are no cross-repository symbol bindings.
 
-The extension adds navigation guidance when a usable index exists. It may nudge one broad, exact-symbol `grep` call toward indexed results; retrying the same grep proceeds normally. Literal, path, filename, and deliberate regex searches remain text searches.
+The extension adds advisory navigation guidance when a usable index exists. It does not intercept or block `grep` or `find`; agents can switch directly to text search when indexed evidence is incomplete.
 
 ## Important boundaries
 
@@ -65,6 +65,7 @@ The extension adds navigation guidance when a usable index exists. It may nudge 
 - Files over 512 KiB, hidden paths, symlinks, nested Git repositories, generated/build/vendor content, and lower-precedence compiled sources are excluded.
 - Structural search requires a path filter above 2,000 candidate files.
 - Arbitrary object receiver types usually require typed TS/JS or imported SCIP.
+- Go structural interface satisfaction is not computed; `codeindex_implementers` reports this boundary explicitly.
 - External dependencies and standard libraries are not graph nodes.
 - Compiler-free project layout reads the root `tsconfig.json` and `go.mod`; multi-project compiler semantics are not generalized.
 - C/C++ preprocessing, PHP namespace/use binding, Rust module/use binding, and Scala member selection are not modeled.

@@ -27,6 +27,8 @@ describe("pi adapter", () => {
 	let ctx: any;
 	let work2: string | undefined;
 	let work3: string | undefined;
+	let work4: string | undefined;
+	let work5: string | undefined;
 
 	beforeAll(() => {
 		work = mkdtempSync(join(tmpdir(), "codeindex-adapter-"));
@@ -43,6 +45,8 @@ describe("pi adapter", () => {
 		rmSync(work, { recursive: true, force: true });
 		if (work2) rmSync(work2, { recursive: true, force: true });
 		if (work3) rmSync(work3, { recursive: true, force: true });
+		if (work4) rmSync(work4, { recursive: true, force: true });
+		if (work5) rmSync(work5, { recursive: true, force: true });
 	});
 
 	it("registers the codeindex_* tool surface", () => {
@@ -66,10 +70,10 @@ describe("pi adapter", () => {
 		}
 	});
 
-	it("registers lifecycle + steering handlers", () => {
+	it("registers lifecycle and advisory steering handlers", () => {
 		expect(handlers.has("session_start")).toBe(true);
 		expect(handlers.has("session_shutdown")).toBe(true);
-		expect(handlers.has("tool_call")).toBe(true);
+		expect(handlers.has("tool_call")).toBe(false);
 		expect(handlers.has("before_agent_start")).toBe(true);
 	});
 
@@ -174,6 +178,14 @@ describe("pi adapter", () => {
 		expect(sync.content[0].text).toContain('No repository matches repo="does-not-exist"');
 	});
 
+	it('resolves repo: "." against the tool cwd', async () => {
+		await tools.get("codeindex_sync").execute("rd1", { repo: "." }, undefined, undefined, ctx);
+		const def = await tools
+			.get("codeindex_def")
+			.execute("rd2", { name: "add", repo: "." }, undefined, undefined, ctx);
+		expect(def.content[0].text).toContain("math.ts");
+	});
+
 	it("labels impact rows by hop depth (direct/transitive), never WillBreak/MayBreak", async () => {
 		await tools.get("codeindex_sync").execute("si", {}, undefined, undefined, ctx);
 		const res = await tools.get("codeindex_impact").execute("ii", { name: "add" }, undefined, undefined, ctx);
@@ -203,17 +215,62 @@ describe("pi adapter", () => {
 		const ctx3 = { cwd: root };
 		await tools.get("codeindex_sync").execute("fs", {}, undefined, undefined, ctx3);
 		const res = await tools.get("codeindex_callers").execute("fc", { name: "widget" }, undefined, undefined, ctx3);
-		expect(res.content[0].text).toContain("suppressed");
-		expect(res.content[0].text).toContain("ambiguous");
+		expect(res.content[0].text).toContain("ambiguous name-only");
+		expect(res.content[0].text).toContain("moniker cannot recover");
+		const def = await tools.get("codeindex_def").execute("fd", { name: "widget" }, undefined, undefined, ctx3);
+		const moniker = /\[id: ([^\]]+)\]/.exec(def.content[0].text)?.[1];
+		const targeted = await tools.get("codeindex_callers").execute("fm", { moniker }, undefined, undefined, ctx3);
+		expect(targeted.content[0].text).toContain("moniker cannot recover");
+		const explored = await tools.get("codeindex_explore").execute("fe", { moniker }, undefined, undefined, ctx3);
+		expect(explored.content[0].text).toContain("moniker cannot recover");
 	});
 
-	it("blocks a symbol-shaped grep once, then lets a retry through", async () => {
-		const handler = handlers.get("tool_call");
-		const event = { toolName: "grep", input: { pattern: "Calculator" } };
-		const first = await handler(event, ctx);
-		expect(first?.block).toBe(true);
-		expect(first?.reason).toContain("Calculator");
-		const second = await handler(event, ctx);
-		expect(second).toBeUndefined();
+	it("warns about possible suppressed sites even when precise edges exist", async () => {
+		const root = mkdtempSync(join(tmpdir(), "codeindex-partial-fanout-pi-"));
+		work5 = root;
+		for (let i = 0; i < 9; i++) writeFileSync(join(root, `d${i}.ts`), `export function widget() { return ${i}; }\n`);
+		writeFileSync(
+			join(root, "precise.ts"),
+			'import { widget } from "./d0.ts";\nexport function precise() { return widget(); }\n',
+		);
+		writeFileSync(join(root, "ambiguous.ts"), "export function ambiguous() { return widget(); }\n");
+		const ctx3 = { cwd: root };
+		await tools.get("codeindex_sync").execute("pfs", {}, undefined, undefined, ctx3);
+		const res = await tools.get("codeindex_callers").execute("pfc", { name: "widget" }, undefined, undefined, ctx3);
+		expect(res.content[0].text).toContain("precise");
+		expect(res.content[0].text).toContain("additional ambiguous sites may be absent");
+	});
+
+	it("reports Go structural implementers as unsupported instead of a complete empty answer", async () => {
+		const root = mkdtempSync(join(tmpdir(), "codeindex-go-interface-pi-"));
+		work4 = root;
+		writeFileSync(
+			join(root, "main.go"),
+			"package sample\n\ntype Runner interface { Run() error }\n\ntype Worker struct{}\nfunc (Worker) Run() error { return nil }\nfunc helper() {}\n",
+		);
+		const goCtx = { cwd: root };
+		await tools.get("codeindex_sync").execute("gs", {}, undefined, undefined, goCtx);
+		const definition = await tools
+			.get("codeindex_def")
+			.execute("gd", { name: "Runner" }, undefined, undefined, goCtx);
+		expect(definition.content[0].text).toContain("interface Runner");
+		const res = await tools
+			.get("codeindex_implementers")
+			.execute("gi", { name: "Runner" }, undefined, undefined, goCtx);
+		expect(res.content[0].text).toContain("Go uses structural interface satisfaction");
+		expect(res.content[0].text).toContain("does not compute");
+		const supertypes = await tools
+			.get("codeindex_supertypes")
+			.execute("gt", { name: "Runner" }, undefined, undefined, goCtx);
+		expect(supertypes.content[0].text).toContain("Go type/interface embedding");
+		const functionQuery = await tools
+			.get("codeindex_implementers")
+			.execute("gf", { name: "helper" }, undefined, undefined, goCtx);
+		expect(functionQuery.content[0].text).toContain("has no matching edges");
+		expect(functionQuery.content[0].text).not.toContain("Go uses structural interface satisfaction");
+	});
+
+	it("does not block native grep/find tools", () => {
+		expect(handlers.has("tool_call")).toBe(false);
 	});
 });

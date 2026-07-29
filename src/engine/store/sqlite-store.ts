@@ -629,7 +629,7 @@ export class SqliteStore implements Store {
 		return rows.map(symbolHit);
 	}
 
-	private symbolByMoniker(moniker: string): SymbolHit[] {
+	definitionByMoniker(moniker: string): SymbolHit | undefined {
 		const rows = this.db
 			.prepare(
 				`SELECT s.moniker, s.name, s.kind, f.path, s.s_line, s.s_col, s.e_line, s.e_col, s.exported, s.owner_type,
@@ -637,7 +637,34 @@ export class SqliteStore implements Store {
 				FROM symbols s JOIN files f ON f.id = s.file_id WHERE s.moniker = ? LIMIT 1`,
 			)
 			.all(moniker) as Row[];
-		return rows.map(symbolHit);
+		const row = rows[0];
+		return row ? symbolHit(row) : undefined;
+	}
+
+	hasDefinitionInLanguage(name: string, language: string, kind?: string): boolean {
+		const row = (
+			kind
+				? this.db.prepare(
+						`SELECT 1 AS found FROM symbols s
+						JOIN files f ON f.id = s.file_id
+						WHERE s.name = ? AND f.lang = ? AND s.kind = ? LIMIT 1`,
+					)
+				: this.db.prepare(
+						`SELECT 1 AS found FROM symbols s
+						JOIN files f ON f.id = s.file_id
+						WHERE s.name = ? AND f.lang = ? LIMIT 1`,
+					)
+		).get(...(kind ? [name, language, kind] : [name, language])) as Row | undefined;
+		return row !== undefined;
+	}
+
+	fanoutRisk(name: string): { definitions: number; sites: number } | undefined {
+		const definitions = Number(
+			(this.db.prepare("SELECT COUNT(*) AS n FROM symbols WHERE name = ?").get(name) as Row).n,
+		);
+		if (definitions <= MAX_NAME_FANOUT) return undefined;
+		const sites = Number((this.db.prepare("SELECT COUNT(*) AS n FROM refs WHERE name = ?").get(name) as Row).n);
+		return sites > 0 ? { definitions, sites } : undefined;
 	}
 
 	explore(sel: { name: string } | { moniker: string }): ExplorationResult {
@@ -646,7 +673,8 @@ export class SqliteStore implements Store {
 		// A generous cap so the depth-1/2 counts are meaningful; the fair-share traversal still caps
 		// rows, so these are "reached within cap" summary counts, not exact totals.
 		const IMPACT_CAP = 200;
-		const candidates = "moniker" in sel ? this.symbolByMoniker(sel.moniker) : this.definitions(sel.name, k);
+		const byMoniker = "moniker" in sel ? this.definitionByMoniker(sel.moniker) : undefined;
+		const candidates = "moniker" in sel ? (byMoniker ? [byMoniker] : []) : this.definitions(sel.name, k);
 		const resolved = candidates.length === 1 ? candidates[0] : undefined;
 		if (!resolved?.moniker) {
 			return {
@@ -880,8 +908,8 @@ export class SqliteStore implements Store {
 			).n,
 		);
 		const sites = Number((this.db.prepare("SELECT COUNT(*) AS n FROM refs WHERE name = ?").get(name) as Row).n);
-		// >cap same-name declarations with nothing bound but raw sites present = fan-out suppression
-		// (ranking.ts drops the intractably-ambiguous name-only edges), not a genuinely unused symbol.
+		// Above-cap names with raw sites and no stored edges carry a fan-out risk. Some sites may
+		// instead be local bindings, so the public diagnostic deliberately says "may be suppressed".
 		if (defs > MAX_NAME_FANOUT && bound === 0 && sites > 0) return { kind: "suppressed", definitions: defs, sites };
 		return { kind: "no-edges", definitions: defs };
 	}

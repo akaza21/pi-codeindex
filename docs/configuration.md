@@ -8,6 +8,7 @@ Configuration is limited to a few runtime options. Repository state lives in `.c
 | --- | --- |
 | `PI_CODEINDEX_TYPED=1` | Enables in-process TypeScript resolution for TS/JS when pi starts; the default file cap becomes 500. |
 | `PI_CODEINDEX_MAX_FILES=N` | Sets pi's explicit full-sync source-file cap (compiler-free default 20,000; maximum 100,000). |
+| `PI_CODEINDEX_WATCH=0` | Disables automatic filesystem watching. Manual sync and all read tools remain available. |
 | CLI `--typed` | Enables the same resolver for that CLI sync; the default file cap becomes 500. |
 | CLI `--max-files N` | Sets the full-sync source-file cap for that invocation (maximum 100,000). |
 | Tool/CLI `repo` or trailing directory | Selects one repository or root. |
@@ -21,15 +22,18 @@ Typed mode is optional because building a TypeScript program costs substantially
 
 ## Index lifecycle
 
-- In pi, session startup warms discovered repositories with at most two concurrent compiler-free syncs or one typed sync, and starts recursive watchers where the platform supports them.
+- In pi, session startup warms and watches only the repository containing cwd. Repositories discovered below a container workspace are warmed on demand and are not all watched automatically.
 - Watch events are batched for 750 ms and normally trigger changed-file syncs.
+- Event storms are bounded and fall back to one full refresh.
 - Read tools serve the last committed SQLite/WAL snapshot while a sync is running.
 - In the standalone CLI, run `codeindex sync` manually after edits; a full sync content-checks the selected corpus.
 - A schema-version change or corrupt SQLite cache rebuilds the cache from source.
 
 ## Workspaces
 
-Inside a git repository, pi indexes that enclosing repository. Otherwise it discovers nested git or build-marker roots to depth 4. Unfiltered reads and syncs fan out to at most eight repositories, with the current repository first. Query coverage and sync concurrency are separate: all eight can be queried, while at most two compiler-free repository syncs or one typed sync runs at once. There are no cross-repository symbol bindings.
+Inside a git repository, pi indexes that enclosing repository. Otherwise it discovers nested git or build-marker roots to depth 4. Unfiltered reads and syncs fan out to at most eight repositories, with the current repository first. Query coverage and sync concurrency are separate: all eight can be queried, while at most two compiler-free repository syncs or one typed sync runs at once. Child repositories discovered from a container directory are warmed when first queried. There are no cross-repository symbol bindings.
+
+The `repo` selector accepts a repository name, absolute path, or a path relative to cwd. `repo: "."` selects the repository containing cwd; from a container workspace, use a child path such as `repo: "./service-a"`.
 
 Start pi inside a project directory. Outside a discovered repository or marker root, the cwd becomes a marker workspace and may receive `.codeindex/` state.
 
@@ -41,7 +45,7 @@ Run `codeindex_status`. In pi it reports:
 
 - indexed file/symbol/occurrence counts;
 - the last completed sync;
-- whether the file watcher is active, unavailable, or failed; and
+- whether the file watcher is starting, active, disabled, unavailable, or failed, including its backend; and
 - the last background sync error, if any.
 
 Then run `codeindex_sync`. In the CLI, `codeindex status . --verify` also walks current file metadata and reports changed, new, and deleted counts.
@@ -64,7 +68,7 @@ Symlinked files and directories are deliberately skipped to keep indexing within
 
 ### Watching is unavailable
 
-Recursive `fs.watch` support is platform-dependent. `codeindex_status` reports the degraded state. Manual `codeindex_sync` remains the recovery path.
+`codeindex_status` reports the watcher backend and degraded state. macOS and Linux use native recursive events; Windows uses a slower polling backend to avoid known process-level failures in native recursive watching while paths change. Set `PI_CODEINDEX_WATCH=0` before starting pi to disable watching explicitly. Manual `codeindex_sync` remains available when watching is disabled or unavailable.
 
 ## Privacy
 
