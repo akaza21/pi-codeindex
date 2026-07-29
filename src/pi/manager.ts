@@ -95,7 +95,10 @@ function platformWatcherBackend(): WatcherBackend {
 			);
 			watcher.on("error", onError);
 			watcher.unref();
-			onReady(false);
+			// Node exposes no readiness event for the native recursive backend. Reconcile
+			// once after attachment so an edit made while the OS stream is starting cannot
+			// fall between the initial index and steady-state notifications.
+			onReady(true);
 			return watcher;
 		},
 	};
