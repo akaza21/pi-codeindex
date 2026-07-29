@@ -19,6 +19,14 @@ npm run check
 
 `npm run check` enforces the engine/pi boundary, typechecks, lints, runs the test suite, validates the npm payload, and installs the packed CLI into a temporary consumer project for a smoke test.
 
+Watcher changes should also run the real large-tree stress harness:
+
+```bash
+npm run test:watcher-stress
+```
+
+On Linux, `prlimit --nofile=256:256 npm run test:watcher-stress` additionally checks behavior under a constrained file-descriptor budget.
+
 ## Project structure
 
 - `src/engine/` is the reusable indexing engine. It must not import pi packages.

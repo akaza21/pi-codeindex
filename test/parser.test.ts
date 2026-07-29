@@ -42,6 +42,16 @@ describe("TreeSitterParser (tags.scm)", () => {
 		expect(calcRefs[0]?.role).toBe("call"); // the surviving ref is still the constructor call site
 	});
 
+	it("distinguishes Go interfaces from other type declarations", async () => {
+		const parsed = await parser.parse(
+			"types.go",
+			"package sample\n\ntype Runner interface { Run() error }\ntype Worker struct{}\nfunc helper() {}\n",
+		);
+		expect(parsed?.symbols.find((symbol) => symbol.name === "Runner")?.kind).toBe("interface");
+		expect(parsed?.symbols.find((symbol) => symbol.name === "Worker")?.kind).toBe("type");
+		expect(parsed?.symbols.find((symbol) => symbol.name === "helper")?.kind).toBe("function");
+	});
+
 	it("returns undefined for unsupported extensions", async () => {
 		expect(await parser.parse("notes.txt", "hello")).toBeUndefined();
 	});

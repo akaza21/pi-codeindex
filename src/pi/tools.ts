@@ -141,14 +141,70 @@ function emptyMessage(reason: EmptyReason, name: string): string {
 		case "no-edges":
 			return `"${name}" is indexed (${reason.definitions} definition(s)) but has no matching edges`;
 		case "suppressed":
-			return `0 bound; ~${reason.sites} site(s) suppressed (${reason.definitions}-way ambiguous name "${name}") — pass moniker to target one declaration`;
+			return (
+				`No stored edges for "${name}". It has ${reason.definitions} declarations and ${reason.sites} parsed site(s); ` +
+				"ambiguous name-only sites may have been suppressed. A moniker cannot recover edges that were not stored; " +
+				"use source search, typed resolution, or SCIP."
+			);
 	}
 }
 
-/** Replace an empty by-name result with an explanation (not-found / unused / fan-out-suppressed). */
-function diagnoseIfEmpty(store: Store, sel: { name: string } | { moniker: string }, lines: string[]): string[] {
-	if (lines.length > 0 || "moniker" in sel) return lines;
-	return [emptyMessage(store.diagnoseEmpty(sel.name), sel.name)];
+function fanoutMessage(store: Store, name: string): string | undefined {
+	const risk = store.fanoutRisk(name);
+	if (!risk) return undefined;
+	return (
+		`"${name}" has ${risk.definitions} declarations and ${risk.sites} parsed site(s). ` +
+		"Name-only resolution is capped at this fan-out, so additional ambiguous sites may be absent; " +
+		"use source search, typed resolution, or SCIP when completeness matters."
+	);
+}
+
+/** Replace an empty edge result with an explanation that does not overstate index completeness. */
+function diagnoseIfEmpty(
+	store: Store,
+	sel: { name: string } | { moniker: string },
+	lines: string[],
+	incoming = false,
+): string[] {
+	if (lines.length > 0) {
+		if (incoming) {
+			const name = "name" in sel ? sel.name : store.definitionByMoniker(sel.moniker)?.name;
+			if (name) {
+				const warning = fanoutMessage(store, name);
+				if (warning) lines.push(warning);
+			}
+		}
+		return lines;
+	}
+	if ("name" in sel) return [emptyMessage(store.diagnoseEmpty(sel.name), sel.name)];
+	const definition = store.definitionByMoniker(sel.moniker);
+	if (!definition) return [`no indexed declaration matches moniker "${sel.moniker}"`];
+	if (incoming) {
+		const reason = store.diagnoseEmpty(definition.name);
+		if (reason.kind === "suppressed") return [emptyMessage(reason, definition.name)];
+	}
+	return [
+		`no matching stored edges for moniker "${sel.moniker}". Empty index output is not proof that no source relationship exists.`,
+	];
+}
+
+function hierarchyLines(store: Store, name: string, limit: number, direction: "incoming" | "outgoing"): string[] {
+	const relations = direction === "incoming" ? store.implementers(name, limit) : store.supertypes(name, limit);
+	const hits = relations.map((hit) => occurrenceLine(hit, (item) => `${item.enclosing} ${item.role} ${item.name}`));
+	const includesGoType =
+		direction === "incoming"
+			? store.hasDefinitionInLanguage(name, "go", "interface")
+			: store.hasDefinitionInLanguage(name, "go", "interface") || store.hasDefinitionInLanguage(name, "go", "type");
+	if (includesGoType) {
+		hits.push(
+			direction === "incoming"
+				? "Go uses structural interface satisfaction, which this index does not compute. " +
+						"Results above contain only stored explicit hierarchy edges; use gopls, SCIP, or source search for complete Go implementers."
+				: "Go type/interface embedding and structural satisfaction are not computed. " +
+						"Results above contain only stored explicit hierarchy edges; use gopls, SCIP, or source inspection for complete Go relationships.",
+		);
+	}
+	return hits.length > 0 ? hits : [emptyMessage(store.diagnoseEmpty(name), name)];
 }
 
 const oneLine = (text: string): string => text.replace(/\s+/g, " ").trim();
@@ -190,7 +246,7 @@ function renderExploration(
 	};
 
 	if (!d.resolved) {
-		force(`${d.candidates.length} candidates — pass a moniker to target one:`);
+		force(`${d.candidates.length} candidates — pass a moniker to inspect one declaration:`);
 		for (const c of d.candidates) if (!add(symbolLine(c))) break;
 		return out;
 	}
@@ -367,8 +423,8 @@ export function registerTools(pi: ExtensionAPI, resolveWorkspace: ResolveWorkspa
 	read<TargetParams>(
 		"codeindex_callers",
 		"Code index: callers",
-		"List call/reference sites that target a symbol (who calls it), with confidence. Pass `moniker` (from a def/search result) to target one specific declaration.",
-		"Use codeindex_callers to inspect incoming calls; pass moniker to disambiguate same-named declarations.",
+		"List stored call sites that target a symbol, with a heuristic resolution score. Ambiguous name-only sites may be suppressed.",
+		"Use codeindex_callers for unique or module-scoped symbols; pass moniker to disambiguate, and switch to source search if suppression is reported.",
 		targetParams,
 		(store, p) => {
 			const t = targetSelector(p);
@@ -379,14 +435,15 @@ export function registerTools(pi: ExtensionAPI, resolveWorkspace: ResolveWorkspa
 				store,
 				t,
 				hits.map((h) => occurrenceLine(h, (x) => `${x.enclosing} → ${x.name}`)),
+				true,
 			);
 		},
 	);
 	read<TargetParams>(
 		"codeindex_callees",
 		"Code index: callees",
-		"List the calls a symbol makes (what it calls), with confidence. Pass `moniker` to target one specific declaration.",
-		"Use codeindex_callees to see what a function depends on; pass moniker to disambiguate.",
+		"List stored calls a symbol makes, with a heuristic resolution score. Ambiguous target bindings may be absent.",
+		"Use codeindex_callees to inspect stored dependencies; pass moniker to disambiguate, and use source inspection when completeness matters.",
 		targetParams,
 		(store, p) => {
 			const t = targetSelector(p);
@@ -403,8 +460,8 @@ export function registerTools(pi: ExtensionAPI, resolveWorkspace: ResolveWorkspa
 	read<TargetParams>(
 		"codeindex_refs",
 		"Code index: references",
-		"List all occurrences (calls and references) that bind to a symbol. Pass `moniker` to target one specific declaration.",
-		"Use codeindex_refs for a complete usage list of a symbol; pass moniker to disambiguate.",
+		"List stored occurrences that bind to a symbol. Pass `moniker` to target one declaration; ambiguous name-only sites may be suppressed.",
+		"Use codeindex_refs for indexed usages; fall back to source search when suppression or unsupported semantics are reported.",
 		targetParams,
 		(store, p) => {
 			const t = targetSelector(p);
@@ -417,36 +474,31 @@ export function registerTools(pi: ExtensionAPI, resolveWorkspace: ResolveWorkspa
 				store,
 				t,
 				hits.map((h) => occurrenceLine(h, (x) => `${x.name} (in ${x.enclosing})`)),
+				true,
 			);
 		},
 	);
 	read<NameParams>(
 		"codeindex_implementers",
 		"Code index: implementers",
-		"List types that extend or implement a class/interface (incoming inheritance edges).",
-		"Use codeindex_implementers to find subclasses and implementers of a type.",
+		"List stored explicit extends/implements edges. Go structural interface satisfaction is not computed.",
+		"Use codeindex_implementers for explicit inheritance; use gopls, SCIP, or source search for Go interface satisfaction.",
 		nameParams,
-		(store, p) =>
-			store
-				.implementers(p.name, p.limit ?? 20)
-				.map((h) => occurrenceLine(h, (x) => `${x.enclosing} ${x.role} ${x.name}`)),
+		(store, p) => hierarchyLines(store, p.name, p.limit ?? 20, "incoming"),
 	);
 	read<NameParams>(
 		"codeindex_supertypes",
 		"Code index: supertypes",
-		"List the classes/interfaces a type extends or implements (outgoing inheritance edges).",
-		"Use codeindex_supertypes to see what a type inherits from.",
+		"List stored explicit outgoing inheritance edges. Go type/interface embedding is not computed.",
+		"Use codeindex_supertypes for explicit inheritance; use gopls, SCIP, or source inspection for Go embedding.",
 		nameParams,
-		(store, p) =>
-			store
-				.supertypes(p.name, p.limit ?? 20)
-				.map((h) => occurrenceLine(h, (x) => `${x.enclosing} ${x.role} ${x.name}`)),
+		(store, p) => hierarchyLines(store, p.name, p.limit ?? 20, "outgoing"),
 	);
 	read<ImpactParams>(
 		"codeindex_impact",
 		"Code index: impact",
 		"Reverse-call closure (who calls this, transitively) — the callers that reach a symbol, not a prediction of what a specific edit breaks. Each row is labelled direct/transitive by hop depth.",
-		"Use codeindex_impact to inspect direct and transitive callers of a symbol.",
+		"Use codeindex_impact for direct and transitive stored callers; use source search if suppression is reported.",
 		impactParams,
 		(store, p) => {
 			const t = targetSelector(p);
@@ -459,6 +511,7 @@ export function registerTools(pi: ExtensionAPI, resolveWorkspace: ResolveWorkspa
 				store,
 				t,
 				hits.map((h) => occurrenceLine(h, (x) => `${x.enclosing} → ${x.name}`)),
+				true,
 			);
 		},
 	);
@@ -475,10 +528,10 @@ export function registerTools(pi: ExtensionAPI, resolveWorkspace: ResolveWorkspa
 		name: "codeindex_explore",
 		label: "Code index: explore",
 		description:
-			"Show a symbol's definition, source head, callers, callees, inheritance edges, and reverse-call reach. Pass repo with a moniker in multi-repo workspaces.",
+			"Show a symbol's definition, source head, and stored relationships. High-fan-out sites and unsupported language semantics may be absent.",
 		promptSnippet: "Inspect a symbol's definition, source, callers, callees, inheritance, and reverse-call reach.",
 		promptGuidelines: [
-			"Use codeindex_explore for a combined symbol overview; pass moniker to select one same-named declaration, and raise budget for more source detail.",
+			"Use codeindex_explore for a combined overview; pass moniker to select one declaration, and fall back to source search when it reports incomplete coverage.",
 		],
 		parameters: exploreParams,
 		async execute(_id, params: ExploreParams, signal, _onUpdate, ctx) {
@@ -497,10 +550,21 @@ export function registerTools(pi: ExtensionAPI, resolveWorkspace: ResolveWorkspa
 			for (const { manager, repo, tag, notice } of entries) {
 				signal?.throwIfAborted();
 				if (notice) lines.push(`${tag}${notice}`);
-				const result = manager.getStore().explore(sel);
-				for (const line of renderExploration(result, params.budget ?? DEFAULT_EXPLORE_BUDGET, sel, (rel) =>
+				const store = manager.getStore();
+				const result = store.explore(sel);
+				const rendered = renderExploration(result, params.budget ?? DEFAULT_EXPLORE_BUDGET, sel, (rel) =>
 					readRepoFile(repo.path, rel),
-				)) {
+				);
+				const subjectName = "name" in sel ? sel.name : result.resolved?.name;
+				if (subjectName) {
+					const reason = store.diagnoseEmpty(subjectName);
+					if (reason.kind === "suppressed") rendered.push(emptyMessage(reason, subjectName));
+					else {
+						const warning = fanoutMessage(store, subjectName);
+						if (warning) rendered.push(warning);
+					}
+				}
+				for (const line of rendered) {
 					lines.push(`${tag}${line}`);
 				}
 			}

@@ -1,9 +1,10 @@
 /**
  * Core data model: everything is occurrences over symbols.
  *
- * The index maximizes recall (never miss a candidate); the model supplies precision
- * (picks the right one). A higher-provenance occurrence replaces a lower one for the
- * same range, so layers can refine results without coordinating.
+ * Resolution prefers precise evidence and retains bounded ambiguous candidate sets.
+ * Intractable name-only fan-out is suppressed rather than materialized as false edges.
+ * A higher-provenance occurrence replaces a lower one for the same range, so layers
+ * can refine results without coordinating.
  */
 
 /** Which layer produced a fact. Ordered low → high precision; higher overwrites lower. */
@@ -84,7 +85,7 @@ export interface OccurrenceRecord {
 	/** Moniker of the symbol this occurrence sits inside (the caller). */
 	enclosing?: string;
 	provenance: Provenance;
-	/** 0..1. Recall-first: ambiguous matches share confidence equally (1/N). */
+	/** Heuristic resolver score in [0,1]; ambiguous matches share their score across candidates. */
 	confidence: number;
 }
 

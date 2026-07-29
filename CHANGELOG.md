@@ -4,6 +4,17 @@ Notable user-facing changes are documented here. The project follows [Semantic V
 
 ## Unreleased
 
+### Fixed
+
+- Degrade supported watcher errors safely, bound event storms, and avoid automatically watching every repository discovered below a container workspace.
+- Resolve relative repository selectors such as `repo: "."` against the session cwd.
+- Report high-fan-out suppression and unsupported Go structural interface queries without implying complete or recoverable results.
+
+### Changed
+
+- Make code-navigation steering advisory; the extension no longer intercepts `grep` or `find`.
+- Describe resolution scores as heuristic evidence rather than calibrated confidence.
+
 ## 0.1.0 - 2026-07-25
 
 ### Added

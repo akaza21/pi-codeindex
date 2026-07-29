@@ -61,6 +61,7 @@ const LANGUAGES: readonly LanguageSpec[] = [
 		id: "go",
 		wasm: "tree-sitter-go/tree-sitter-go.wasm",
 		tagsModules: ["tree-sitter-go/queries/tags.scm"],
+		tagsVendored: ["queries/go/tags-extra.scm"],
 		localsModules: [],
 		localsVendored: ["queries/go/locals.scm"],
 		extensions: [".go"],

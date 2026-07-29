@@ -12,7 +12,7 @@ The comparison reports coverage and accuracy separately. SCIP locations are tran
 
 The syntactic and scoped resolvers were evaluated without optional typed resolution.
 
-| Corpus | In-project SCIP references | Exactly comparable | Candidate recall | Deterministic top-1 | Unique-top-rank precision | Precision at confidence ≥0.9 |
+| Corpus | In-project SCIP references | Exactly comparable | Candidate recall | Deterministic top-1 | Unique-top-rank precision | Precision at score ≥0.9 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Microsoft TypeScript 5.6.3 | 224,320 | 33,944 (15.1%) | 99.1% | 77.2% | 98.8% | 98.6% |
 | scip-go 0.2.7 | 1,140 | 290 (25.4%) | 100% | 95.5% | 100% | 100% |
@@ -30,6 +30,6 @@ The Go corpus used commit `2e9ff3c2603a85daabe125c9f20075ec52df0731`, `scip-go` 
 - **Candidate recall:** the compiler target appears anywhere in pi-codeindex's candidate set.
 - **Top-rank recall:** the compiler target appears among the highest-ranked candidates.
 - **Unique-top-rank precision:** an unambiguous highest-ranked candidate equals the compiler target.
-- **High-confidence precision:** a candidate emitted at confidence 0.9 or higher equals the compiler target.
+- **High-score precision:** a candidate emitted at heuristic resolution score 0.9 or higher equals the compiler target. The score is not a calibrated probability.
 
-The harness also prints definition/reference coverage, local and external SCIP counts, role/provenance/confidence breakdowns, tied-candidate classifications, and representative disagreements. This keeps low mapping coverage, ambiguous candidates, and precise bindings from being blended into a single accuracy number.
+The harness also prints definition/reference coverage, local and external SCIP counts, role/provenance/resolution-score breakdowns, tied-candidate classifications, and representative disagreements. This keeps low mapping coverage, ambiguous candidates, and precise bindings from being blended into a single accuracy number.

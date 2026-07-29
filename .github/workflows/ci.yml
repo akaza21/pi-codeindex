@@ -31,6 +31,7 @@ jobs:
       - run: npm run lint
       - run: npm run check:package
       - run: npm run test:package
+      - run: prlimit --nofile=256:256 -- npm run test:watcher-stress
       - run: npm audit --omit=dev
 
   test:
@@ -62,5 +63,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - if: matrix.node == 24 && (matrix.os == 'macos-latest' || matrix.os == 'windows-latest')
+        run: npm run test:watcher-stress
       - if: matrix.os == 'windows-latest' && matrix.node == 24
         run: npm run test:package

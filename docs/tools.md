@@ -11,19 +11,21 @@ pi tool names use the `codeindex_` prefix. Standalone CLI commands omit it. Resu
 
 All other query tools are read-only. A cancelled tool call stops waiting or scanning promptly; an already shared background sync may safely finish updating the cache.
 
+Indexed relationships are navigation evidence, not proof of absence. Switch to source search when a tool reports high-fan-out suppression or unsupported language semantics. A moniker precisely selects an existing stored declaration or edge; it cannot recreate an edge suppressed during indexing.
+
 ## Reference
 
 | pi tool | CLI | Behavior |
 | --- | --- | --- |
-| `codeindex_explore` | `explore` | Definition/body head, up to 15 callers and callees, name-scoped hierarchy, and capped depth-2 impact summary. |
+| `codeindex_explore` | `explore` | Definition/body head, up to 15 stored callers and callees, name-scoped hierarchy, and capped depth-2 impact summary. |
 | `codeindex_search` | `search` | Ranked symbol-name/text search: exact names, then FTS and bounded single-token subsequence fallback. |
 | `codeindex_def` | `def` | Exact-name declaration sites with kind, path, known modifiers, and moniker. |
-| `codeindex_callers` | `callers` | Incoming call/reference edges to a name or repo-local moniker, ordered by confidence. |
-| `codeindex_callees` | `callees` | Outgoing call/reference edges from a name or repo-local moniker. |
+| `codeindex_callers` | `callers` | Stored incoming call/reference edges to a name or repo-local moniker, ordered by heuristic resolution score; ambiguous name-only sites may be absent. |
+| `codeindex_callees` | `callees` | Stored outgoing call/reference edges from a name or repo-local moniker; ambiguous target bindings may be absent. |
 | `codeindex_refs` | `refs` | Stored resolved occurrences targeting a name or moniker, including inheritance roles. |
-| `codeindex_implementers` | `implementers` | Name-scoped incoming `extends`/`implements` edges. |
-| `codeindex_supertypes` | `supertypes` | Name-scoped outgoing `extends`/`implements` edges. |
-| `codeindex_impact` | `impact` | Fair, capped reverse-call traversal, aggregated by enclosing caller and labelled by hop depth. |
+| `codeindex_implementers` | `implementers` | Name-scoped explicit `extends`/`implements` edges. Go structural interface satisfaction is not computed. |
+| `codeindex_supertypes` | `supertypes` | Name-scoped explicit outgoing hierarchy edges. Go type/interface embedding is not computed. |
+| `codeindex_impact` | `impact` | Fair, capped reverse-call traversal over stored edges, aggregated by enclosing caller and labelled by hop depth. |
 | `codeindex_files` | `files` | Indexed paths, optionally filtered by path substring. |
 | `codeindex_match` | `match` | Current-disk tree-sitter structural query for one language, limited to 2,000 candidate files. |
 | `codeindex_cycles` | `cycles` | TS/JS file-level import strongly connected components. |
@@ -34,7 +36,7 @@ All other query tools are read-only. A cancelled tool call stops waiting or scan
 
 ## Common parameters
 
-- `repo` narrows a pi query to one repository in a multi-repository workspace.
+- `repo` narrows a pi query by name, absolute path, or path relative to cwd. `.` selects the repository containing cwd.
 - `moniker` targets one exact declaration returned by `search` or `def`; pass it with its `repo` tag in workspace mode.
 - `limit` is a positive maximum result count, up to 500.
 - `budget` is an approximate positive character cap for `explore`, not a token count; the maximum is 50,000.
@@ -52,4 +54,4 @@ The query language cannot express “a node without child X.” Match the surrou
 
 ## Reading results
 
-Definition/search rows include repo-local monikers. Occurrence rows include provenance and confidence. `direct` impact rows are one reverse-call hop away; `transitive (depth N)` rows are reached in N hops. Impact is reachability over stored call/reference edges, not edit semantics.
+Definition/search rows include repo-local monikers. Occurrence rows include provenance and a heuristic resolution score, not a calibrated probability. `direct` impact rows are one reverse-call hop away; `transitive (depth N)` rows are reached in N hops. Impact is reachability over stored call/reference edges, not edit semantics.

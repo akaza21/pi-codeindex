@@ -218,7 +218,7 @@ function printExploration(
 		used += s.length + 1;
 	};
 	if (!d.resolved) {
-		force(`${d.candidates.length} candidates — pass a moniker to target one:`);
+		force(`${d.candidates.length} candidates — pass a moniker to inspect one declaration:`);
 		for (const c of d.candidates) if (!add(symbolText(c))) break;
 	} else {
 		const r = d.resolved;
@@ -258,21 +258,52 @@ function printExploration(
 	for (const line of out) console.log(line);
 }
 
-/** Explain a zero-result by-name query: not indexed, indexed-but-unused, or fan-out-suppressed. */
+/** Explain a zero-result by-name query without treating index absence as proof of source absence. */
 function diagnose(store: Store, name: string): void {
 	const r = store.diagnoseEmpty(name);
 	if (r.kind === "no-symbol") console.log(`no symbol named "${name}"`);
 	else if (r.kind === "suppressed")
 		console.log(
-			`0 bound; ~${r.sites} site(s) suppressed (${r.definitions}-way ambiguous name "${name}") — narrow with --moniker`,
+			`No stored edges for "${name}". It has ${r.definitions} declarations and ${r.sites} parsed site(s); ` +
+				"ambiguous name-only sites may have been suppressed. A moniker cannot recover edges that were not stored; " +
+				"use source search, typed resolution, or SCIP.",
 		);
 	else console.log(`"${name}" is indexed (${r.definitions} definition(s)) but has no matching edges`);
 }
 
-/** Zero-result message for a by-target query: diagnose a name; a moniker miss names the moniker. */
-function diagnoseTarget(store: Store, t: { name: string } | { moniker: string }): void {
+function printFanoutRisk(store: Store, t: { name: string } | { moniker: string }): void {
+	const name = "name" in t ? t.name : store.definitionByMoniker(t.moniker)?.name;
+	if (!name) return;
+	const risk = store.fanoutRisk(name);
+	if (!risk) return;
+	console.log(
+		`"${name}" has ${risk.definitions} declarations and ${risk.sites} parsed site(s). ` +
+			"Name-only resolution is capped at this fan-out, so additional ambiguous sites may be absent; " +
+			"use source search, typed resolution, or SCIP when completeness matters.",
+	);
+}
+
+/** Explain an empty target query without treating incomplete index evidence as proof of absence. */
+function diagnoseTarget(store: Store, t: { name: string } | { moniker: string }, incoming = false): void {
 	if ("name" in t) diagnose(store, t.name);
-	else console.log(`no matching edges for moniker "${t.moniker}"`);
+	else {
+		const definition = store.definitionByMoniker(t.moniker);
+		if (!definition) {
+			console.log(`no indexed declaration matches moniker "${t.moniker}"`);
+			return;
+		}
+		if (incoming) {
+			const reason = store.diagnoseEmpty(definition.name);
+			if (reason.kind === "suppressed") {
+				diagnose(store, definition.name);
+				return;
+			}
+		}
+		console.log(
+			`no matching stored edges for moniker "${t.moniker}". ` +
+				"Empty index output is not proof that no source relationship exists.",
+		);
+	}
 }
 
 const oneLine = (text: string): string => text.replace(/\s+/g, " ").trim();
@@ -369,7 +400,8 @@ async function run(
 			const hits =
 				"moniker" in t ? store.callersByMoniker(t.moniker, args.limit) : store.callers(t.name, args.limit);
 			printOccurrences(hits, (h) => `${h.enclosing} → ${h.name}`);
-			if (hits.length === 0) diagnoseTarget(store, t);
+			if (hits.length === 0) diagnoseTarget(store, t, true);
+			else printFanoutRisk(store, t);
 			return;
 		}
 		case "callees": {
@@ -385,15 +417,37 @@ async function run(
 			const hits =
 				"moniker" in t ? store.referencesByMoniker(t.moniker, args.limit) : store.references(t.name, args.limit);
 			printOccurrences(hits, (h) => `${h.name} (in ${h.enclosing})`);
-			if (hits.length === 0) diagnoseTarget(store, t);
+			if (hits.length === 0) diagnoseTarget(store, t, true);
+			else printFanoutRisk(store, t);
 			return;
 		}
-		case "implementers":
-			printOccurrences(store.implementers(ensureQuery(), args.limit), (h) => `${h.enclosing} ${h.role} ${h.name}`);
+		case "implementers": {
+			const name = ensureQuery();
+			const hits = store.implementers(name, args.limit);
+			printOccurrences(hits, (h) => `${h.enclosing} ${h.role} ${h.name}`);
+			if (store.hasDefinitionInLanguage(name, "go", "interface")) {
+				console.log(
+					"Go uses structural interface satisfaction, which this index does not compute. " +
+						"Results above contain only stored explicit hierarchy edges; use gopls, SCIP, or source search for complete Go implementers.",
+				);
+			} else if (hits.length === 0) diagnose(store, name);
 			return;
-		case "supertypes":
-			printOccurrences(store.supertypes(ensureQuery(), args.limit), (h) => `${h.enclosing} ${h.role} ${h.name}`);
+		}
+		case "supertypes": {
+			const name = ensureQuery();
+			const hits = store.supertypes(name, args.limit);
+			printOccurrences(hits, (h) => `${h.enclosing} ${h.role} ${h.name}`);
+			if (
+				store.hasDefinitionInLanguage(name, "go", "interface") ||
+				store.hasDefinitionInLanguage(name, "go", "type")
+			) {
+				console.log(
+					"Go type/interface embedding and structural satisfaction are not computed. " +
+						"Results above contain only stored explicit hierarchy edges; use gopls, SCIP, or source inspection for complete Go relationships.",
+				);
+			} else if (hits.length === 0) diagnose(store, name);
 			return;
+		}
 		case "impact": {
 			const t = target();
 			const hits =
@@ -401,12 +455,20 @@ async function run(
 					? store.impactByMoniker(t.moniker, args.depth, args.limit)
 					: store.impact(t.name, args.depth, args.limit);
 			printOccurrences(hits, (h) => `${h.enclosing} → ${h.name}`);
-			if (hits.length === 0) diagnoseTarget(store, t);
+			if (hits.length === 0) diagnoseTarget(store, t, true);
+			else printFanoutRisk(store, t);
 			return;
 		}
 		case "explore": {
 			const t = target();
-			printExploration(store.explore(t), args.budget, t, root);
+			const result = store.explore(t);
+			printExploration(result, args.budget, t, root);
+			const subjectName = "name" in t ? t.name : result.resolved?.name;
+			if (subjectName) {
+				const reason = store.diagnoseEmpty(subjectName);
+				if (reason.kind === "suppressed") diagnose(store, subjectName);
+				else printFanoutRisk(store, { name: subjectName });
+			}
 			return;
 		}
 		case "match": {

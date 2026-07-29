@@ -339,6 +339,7 @@ function isMoreSpecific(candidate: ParsedSymbol, current: ParsedSymbol): boolean
 }
 
 function symbolSpecificity(symbol: ParsedSymbol): number {
+	if (symbol.kind === "interface") return 3;
 	if (symbol.kind === "method") return 2;
 	return symbol.ownerType ? 1 : 0;
 }

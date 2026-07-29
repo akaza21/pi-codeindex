@@ -12,7 +12,7 @@
  * Discovery is cached in-memory with a short TTL (no on-disk registry).
  */
 
-import { lstatSync, readdirSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type { SyncResult } from "../engine/index.ts";
 import { MAX_CONCURRENT_REPO_SYNCS, MAX_CONCURRENT_TYPED_REPO_SYNCS } from "../limits.ts";
@@ -170,15 +170,14 @@ export class WorkspaceManager {
 
 	private filtered(filter?: string): WorkspaceRepo[] {
 		const all = this.allRepos();
-		const normalizedFilter = filter?.replaceAll("\\", "/");
-		return filter
-			? all.filter(
-					(repo) =>
-						repo.name === filter ||
-						repo.path === filter ||
-						repo.path.replaceAll("\\", "/").endsWith(`/${normalizedFilter}`),
-				)
-			: all;
+		if (!filter) return all;
+		const normalizedFilter = filter.replaceAll("\\", "/");
+		const resolvedFilter = resolveExistingPath(this.cwd, filter);
+		return all.filter((repo) => {
+			if (repo.name === filter || (isAbsolute(filter) && samePath(repo.path, filter))) return true;
+			if (repo.path.replaceAll("\\", "/").endsWith(`/${normalizedFilter}`)) return true;
+			return resolvedFilter !== undefined && containsPath(canonicalExistingPath(repo.path), resolvedFilter);
+		});
 	}
 
 	/** Matching repos, cwd-first, capped at the fan-out limit. */
@@ -200,9 +199,7 @@ export class WorkspaceManager {
 		if (!manager) {
 			manager = new IndexManager(repoPath);
 			this.managers.set(repoPath, manager);
-			// A repo discovered/queried after the session started watching must be watched too
-			// (startWatching is idempotent, so the startup loop double-calling this is a no-op).
-			if (this.watching) manager.startWatching();
+			if (this.watching && this.automaticRepo()?.path === repoPath) manager.startWatching();
 		}
 		return manager;
 	}
@@ -266,24 +263,35 @@ export class WorkspaceManager {
 	 * navigating; this can. Used to steer the agent toward the index only when it is useful.
 	 */
 	hasIndexedSymbols(): boolean {
-		for (const repo of this.repos()) {
-			const store = this.managerFor(repo.path).readyStore();
+		for (const manager of this.managers.values()) {
+			const store = manager.readyStore();
 			if (store?.hasSymbols()) return true;
 		}
 		return false;
 	}
 
-	/** Queue the cwd repo first, then the rest; typed workspaces serialize heavy syncs. */
+	/**
+	 * Warm only the repository containing cwd. A container workspace may expose several
+	 * repositories, but those are warmed on demand by the first query instead of consuming
+	 * resources merely because a pi session started above them.
+	 */
 	warmUp(): void {
 		if (this.warmedUp) return;
 		this.warmedUp = true;
-		const repos = this.repos();
-		for (const repo of repos) this.warmRepo(repo.path);
+		const repo = this.automaticRepo();
+		if (repo) this.warmRepo(repo.path);
 	}
 
 	startWatching(): void {
 		this.watching = true;
-		for (const repo of this.repos()) this.managerFor(repo.path).startWatching();
+		const repo = this.automaticRepo();
+		if (repo) this.managerFor(repo.path).startWatching();
+	}
+
+	/** The single repository whose root contains cwd; absent for a multi-repo container root. */
+	private automaticRepo(): WorkspaceRepo | undefined {
+		const here = resolve(this.cwd);
+		return this.repos().find((repo) => containsPath(repo.path, here));
 	}
 
 	async shutdown(): Promise<void> {
@@ -319,4 +327,27 @@ async function mapConcurrent<T, R>(
 function containsPath(parent: string, candidate: string): boolean {
 	const rel = relative(parent, candidate);
 	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function samePath(left: string, right: string): boolean {
+	const a = canonicalExistingPath(left);
+	const b = canonicalExistingPath(right);
+	return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+/** Resolve path-like selectors without allowing a nonexistent string to select its enclosing repo. */
+function resolveExistingPath(cwd: string, filter: string): string | undefined {
+	const candidate = resolve(cwd, filter);
+	if (!existsSync(candidate)) return undefined;
+	return canonicalExistingPath(candidate);
+}
+
+/** Normalize platform aliases such as macOS `/var` → `/private/var` on both sides of a comparison. */
+function canonicalExistingPath(path: string): string {
+	const candidate = resolve(path);
+	try {
+		return realpathSync.native(candidate);
+	} catch {
+		return candidate;
+	}
 }

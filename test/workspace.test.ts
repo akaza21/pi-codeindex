@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { discoverRepos, resolveWorkspaceRepos, WorkspaceManager } from "../src/pi/workspace.ts";
 
@@ -36,6 +36,25 @@ describe("workspace discovery", () => {
 			.sort();
 		expect(repos).toEqual(["alpha", "beta"]);
 		expect(resolveWorkspaceRepos(work)).toHaveLength(2);
+	});
+
+	it("resolves repository selectors relative to cwd", () => {
+		const alpha = join(work, "alpha");
+		const nested = join(alpha, "src");
+		mkdirSync(nested);
+		const inside = new WorkspaceManager(nested);
+		const container = new WorkspaceManager(work);
+		try {
+			expect(inside.repos(".").map((repo) => repo.name)).toEqual(["alpha"]);
+			expect(inside.repos("..").map((repo) => repo.name)).toEqual(["alpha"]);
+			expect(container.repos("./alpha").map((repo) => repo.name)).toEqual(["alpha"]);
+			expect(container.repos(alpha).map((repo) => repo.name)).toEqual(["alpha"]);
+			expect(container.repos("beta").map((repo) => repo.name)).toEqual(["beta"]);
+			expect(container.repos("does-not-exist")).toEqual([]);
+		} finally {
+			void inside.shutdown();
+			void container.shutdown();
+		}
 	});
 
 	it("fans a synced query out across repos with [repo] tags", async () => {
@@ -79,7 +98,7 @@ describe("workspace discovery", () => {
 					});
 			}
 
-			ws.warmUp();
+			for (const repo of repos) ws.warmRepo(repo.path);
 			expect(started).toBe(2);
 			while (started < repos.length) {
 				releases.shift()?.();
@@ -95,6 +114,63 @@ describe("workspace discovery", () => {
 			rmSync(largeWork, { recursive: true, force: true });
 			if (previous === undefined) delete process.env.PI_CODEINDEX_TYPED;
 			else process.env.PI_CODEINDEX_TYPED = previous;
+		}
+	});
+
+	it("does not automatically warm or watch every child repo from a container cwd", async () => {
+		const containerWork = makeWorkspace(5);
+		const ws = new WorkspaceManager(containerWork);
+		try {
+			let warms = 0;
+			let watches = 0;
+			for (const repo of ws.repos()) {
+				const manager = ws.managerFor(repo.path);
+				(manager as any).isReady = () => false;
+				(manager as any).isSyncing = () => false;
+				(manager as any).warm = async () => {
+					warms++;
+				};
+				(manager as any).startWatching = () => {
+					watches++;
+				};
+			}
+			ws.warmUp();
+			ws.startWatching();
+			await new Promise<void>((done) => setImmediate(done));
+			expect(warms).toBe(0);
+			expect(watches).toBe(0);
+		} finally {
+			await ws.shutdown();
+			rmSync(containerWork, { recursive: true, force: true });
+		}
+	});
+
+	it("automatically warms and watches only the repository containing cwd", async () => {
+		const containingWork = makeWorkspace(2);
+		const cwd = join(containingWork, "alpha");
+		const ws = new WorkspaceManager(cwd);
+		try {
+			const repo = ws.repos()[0];
+			expect(repo?.path).toBe(resolve(cwd));
+			const manager = ws.managerFor(repo?.path as string);
+			let warms = 0;
+			let watches = 0;
+			(manager as any).isReady = () => false;
+			(manager as any).isSyncing = () => false;
+			(manager as any).warm = async () => {
+				warms++;
+			};
+			(manager as any).startWatching = () => {
+				watches++;
+			};
+			ws.warmUp();
+			ws.startWatching();
+			await new Promise<void>((done) => setImmediate(done));
+			expect(warms).toBe(1);
+			expect(watches).toBe(1);
+		} finally {
+			await ws.shutdown();
+			rmSync(containingWork, { recursive: true, force: true });
 		}
 	});
 
@@ -124,7 +200,7 @@ describe("workspace discovery", () => {
 					});
 			}
 
-			ws.warmUp();
+			for (const repo of ws.repos()) ws.warmRepo(repo.path);
 			expect(started).toBe(1);
 			while (started < 3) {
 				releases.shift()?.();
