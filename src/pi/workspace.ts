@@ -176,7 +176,7 @@ export class WorkspaceManager {
 		return all.filter((repo) => {
 			if (repo.name === filter || (isAbsolute(filter) && samePath(repo.path, filter))) return true;
 			if (repo.path.replaceAll("\\", "/").endsWith(`/${normalizedFilter}`)) return true;
-			return resolvedFilter !== undefined && containsPath(repo.path, resolvedFilter);
+			return resolvedFilter !== undefined && containsPath(canonicalExistingPath(repo.path), resolvedFilter);
 		});
 	}
 
@@ -330,8 +330,8 @@ function containsPath(parent: string, candidate: string): boolean {
 }
 
 function samePath(left: string, right: string): boolean {
-	const a = resolve(left);
-	const b = resolve(right);
+	const a = canonicalExistingPath(left);
+	const b = canonicalExistingPath(right);
 	return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
 }
 
@@ -339,6 +339,12 @@ function samePath(left: string, right: string): boolean {
 function resolveExistingPath(cwd: string, filter: string): string | undefined {
 	const candidate = resolve(cwd, filter);
 	if (!existsSync(candidate)) return undefined;
+	return canonicalExistingPath(candidate);
+}
+
+/** Normalize platform aliases such as macOS `/var` → `/private/var` on both sides of a comparison. */
+function canonicalExistingPath(path: string): string {
+	const candidate = resolve(path);
 	try {
 		return realpathSync.native(candidate);
 	} catch {

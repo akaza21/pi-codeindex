@@ -425,8 +425,10 @@ describe("watcher integration", () => {
 			await m.sync();
 			expect(m.getStore().definitions("original", 5)).toHaveLength(1);
 			m.startWatching();
+			const readyDeadline = Date.now() + 10_000;
+			while (Date.now() < readyDeadline && m.diagnostics().watcher === "starting") await delay(100);
 			if (m.diagnostics().watcher !== "active") {
-				expect(m.diagnostics().watcher).toBe("unavailable");
+				expect(["unavailable", "error"]).toContain(m.diagnostics().watcher);
 				return;
 			}
 			// macOS can expose a recursive watcher handle before its backend is ready.

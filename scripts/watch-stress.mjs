@@ -30,18 +30,16 @@ try {
 	while (Date.now() < readyDeadline && manager.diagnostics().watcher === "starting") await delay(200);
 
 	const diagnostics = manager.diagnostics();
-	assert.ok(["active", "unavailable", "error"].includes(diagnostics.watcher));
+	assert.equal(diagnostics.watcher, "active");
 	assert.equal(process.listenerCount("uncaughtException"), uncaughtListeners);
 	const after = openFileDescriptors();
-	if (diagnostics.watcher === "active") {
-		if (before !== undefined && after !== undefined) assert.ok(after - before <= 4);
-		writeFileSync(join(root, "observed.ts"), "export function observedByStressTest() { return 1; }\n");
-		const deadline = Date.now() + 20_000;
-		while (Date.now() < deadline && manager.getStore().definitions("observedByStressTest", 1).length === 0) {
-			await delay(200);
-		}
-		assert.equal(manager.getStore().definitions("observedByStressTest", 1).length, 1);
+	if (before !== undefined && after !== undefined) assert.ok(after - before <= 4);
+	writeFileSync(join(root, "observed.ts"), "export function observedByStressTest() { return 1; }\n");
+	const deadline = Date.now() + 20_000;
+	while (Date.now() < deadline && manager.getStore().definitions("observedByStressTest", 1).length === 0) {
+		await delay(200);
 	}
+	assert.equal(manager.getStore().definitions("observedByStressTest", 1).length, 1);
 	console.log(
 		JSON.stringify({
 			paths: 12_000,
