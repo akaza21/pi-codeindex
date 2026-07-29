@@ -4,6 +4,8 @@ Notable user-facing changes are documented here. The project follows [Semantic V
 
 ## Unreleased
 
+## 0.1.1 - 2026-07-30
+
 ### Fixed
 
 - Degrade supported watcher errors safely, bound event storms, and avoid automatically watching every repository discovered below a container workspace.

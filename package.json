@@ -1,6 +1,6 @@
 {
   "name": "@akaza21/pi-codeindex",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local code navigation for pi agents and the command line, with call graphs, structural search, and SCIP support.",
   "type": "module",
   "license": "MIT",
